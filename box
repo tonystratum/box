@@ -67,7 +67,8 @@ create() {
   [[ -n $vol ]] && vol=(-v box-$n:/work) || vol=()
   container create --name box-$n --init -l box=1 "${vol[@]}" $IMG sleep infinity >/dev/null
   container start box-$n >/dev/null
-  container exec box-$n sh -c "mkdir -p /work/$n && chown -R claude:claude /work"
+  container exec -u root box-$n sh -c "mkdir -p /work/$n && chown -R claude:claude /work" \
+    || { container delete -f box-$n >/dev/null; container volume delete box-$n &>/dev/null; die "setup of $n failed; nothing was kept"; }
 }
 
 clone() {  # name owner/repo
