@@ -1,0 +1,47 @@
+#compdef box
+# Install: put this directory on $fpath before compinit, e.g. fpath=(~/box $fpath)
+
+_box_projects() {
+  local -a p
+  p=(${(f)"$(container ls -a --format json 2>/dev/null | jq -r '.[] | select(.configuration.id|startswith("box-"))
+       | "\(.configuration.id|ltrimstr("box-")):\(.status.state)"')"})
+  _describe -t projects project p
+}
+
+# Repos you already have a PAT for, read from Keychain item names (dump-keychain without -d prints no secrets).
+_box_repos() {
+  local -a r
+  r=(${(f)"$(security dump-keychain 2>/dev/null | sed -nE 's#.*"svce"<blob>="box/github/([^"]+)".*#\1#p' | sort -u)"})
+  _describe -t repos 'GitHub repo (owner/repo or URL)' r
+}
+
+_box() {
+  local -a cmds=(
+    'build:build the sandbox image'
+    'login:store a Claude token in the Keychain'
+    'new:create a project (empty, or --clone a GitHub repo)'
+    'run:start Claude in a project'
+    'fresh:throwaway session on a GitHub repo'
+    'push:connect a project to an empty GitHub repo and push'
+    'token:replace a project'"'"'s GitHub token'
+    'shell:bash in a project'
+    'ls:list projects'
+    'stop:stop a project'
+    'rm:delete a project (refuses if work is unpushed)'
+  )
+  local curcontext=$curcontext state line
+  _arguments -C '1:command:->cmd' '*::arg:->args'
+  case $state in
+    cmd) _describe -t commands command cmds ;;
+    args)
+      case $line[1] in
+        new)   _arguments '--name[project name]:name:' '--clone[GitHub repo to clone]:repo:_box_repos' ;;
+        run|shell|stop|token) _arguments '1:project:_box_projects' ;;
+        rm)    _arguments '--force[delete even with unpushed work]' '1:project:_box_projects' ;;
+        push)  _arguments '1:project:_box_projects' '2:repo:_box_repos' ;;
+        fresh) _arguments '1:repo:_box_repos' ;;
+      esac ;;
+  esac
+}
+
+_box "$@"

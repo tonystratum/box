@@ -1,0 +1,172 @@
+#!/bin/zsh
+# box: run Claude Code in isolated apple/container VMs. See DESIGN.md.
+setopt err_return pipe_fail extended_glob
+
+IMG=box:latest
+DIR=${0:A:h}
+# Secrets/identity are passed by name only: `container exec -e NAME` copies the
+# value from our environment and skips unset names, so values never hit argv or disk.
+ENVS=(-e CLAUDE_CODE_OAUTH_TOKEN -e GH_TOKEN
+      -e GIT_AUTHOR_NAME -e GIT_AUTHOR_EMAIL -e GIT_COMMITTER_NAME -e GIT_COMMITTER_EMAIL)
+
+die() { print -u2 -- "error: $*"; exit 1 }
+
+# owner/repo from any GitHub form: owner/repo, https://github.com/owner/repo(.git), git@github.com:owner/repo.git
+repo_of() {
+  local u=${1%/}; u=${u%.git}
+  u=${u#git@github.com:}; u=${u#http(s|)://}; u=${u#www.}; u=${u#github.com/}
+  [[ $u == [A-Za-z0-9_.-]##/[A-Za-z0-9_.-]## ]] || die "not a GitHub repo: $1"
+  print -r -- $u
+}
+
+randname() {
+  local -a a=(brisk calm dusty eager fuzzy gentle hollow icy jolly keen lucky mellow nimble odd plain quiet
+              rusty shy snowy tidy vivid warm witty young zesty amber bold crisp dry fresh grand humble)
+  local -a b=(otter falcon badger heron lynx marmot newt owl panda quail raven seal tapir viper walrus yak
+              bison crane dingo egret ferret gecko ibis koala lemur moose narwhal ocelot puffin robin stoat wren)
+  local -a c=(lamp anchor bridge candle drum engine fern glacier harbor island jar kettle ladder mirror needle orbit
+              pebble quilt river saddle tower umbrella valley wagon yarn zipper beacon canyon delta ember forge grove)
+  print -r -- ${a[RANDOM%32+1]}-${b[RANDOM%32+1]}-${c[RANDOM%32+1]}
+}
+
+state() { container ls -a --format json | jq -r --arg id box-$1 '.[] | select(.configuration.id==$id) | .status.state' }
+need()  { [[ -n $(state $1) ]] || die "no such project '$1' (see: box ls)" }
+up()    { need $1; [[ $(state $1) == running ]] || container start box-$1 >/dev/null }
+x()     { local n=$1; shift; container exec "${ENVS[@]}" -u claude -w /work/$n box-$n "$@" }  # quiet exec in repo dir
+
+kc_get() { security find-generic-password -s "box/$1" -w 2>/dev/null }
+kc_set() { print "Paste $2 (input hidden, asked twice):"; security add-generic-password -U -a "$USER" -s "box/$1" -w }
+
+load_claude() {
+  CLAUDE_CODE_OAUTH_TOKEN=$(kc_get claude) || die "no Claude token: run 'box login'"
+  export CLAUDE_CODE_OAUTH_TOKEN
+}
+load_identity() {
+  # Skip if Xcode CLT is missing: the /usr/bin/git stub would pop an installer dialog.
+  xcode-select -p &>/dev/null || return 0
+  GIT_AUTHOR_NAME=$(git config --global user.name) GIT_AUTHOR_EMAIL=$(git config --global user.email) || :
+  export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME=$GIT_AUTHOR_NAME GIT_COMMITTER_EMAIL=$GIT_AUTHOR_EMAIL
+}
+# Ensure a PAT for owner/repo is in the Keychain (prompting if missing) and exported as GH_TOKEN.
+load_pat() {
+  if ! GH_TOKEN=$(kc_get github/$1); then
+    print "Create a fine-grained PAT: https://github.com/settings/personal-access-tokens/new"
+    print "  Repository access: only $1    Permissions: Contents read/write (+ Pull requests if you want PRs)"
+    kc_set github/$1 "the token for $1"
+    GH_TOKEN=$(kc_get github/$1) || die "token not stored"
+  fi
+  export GH_TOKEN
+}
+remote_of() { x $1 git remote get-url origin 2>/dev/null | sed -E 's#^https://github.com/##; s#\.git$##' }
+
+# Create + start a container; fresh ones skip the volume (they are disposable).
+create() {
+  local n=$1 vol=$2
+  [[ -z $(state $n) ]] || die "project '$n' exists; use --name"
+  container image inspect $IMG &>/dev/null || die "no image: run 'box build'"
+  [[ -n $vol ]] && vol=(-v box-$n:/work) || vol=()
+  container create --name box-$n --init -l box=1 "${vol[@]}" $IMG sleep infinity >/dev/null
+  container start box-$n >/dev/null
+  container exec box-$n sh -c "mkdir -p /work/$n && chown -R claude:claude /work"
+}
+
+clone() {  # name owner/repo
+  container exec "${ENVS[@]}" -u claude -w /work box-$1 git clone -q https://github.com/$2.git $1 \
+    || { container delete -f box-$1 >/dev/null; container volume delete box-$1 &>/dev/null; die "clone failed: check the token can read $2"; }
+}
+
+# Hard-coded exit guard: true only if the work tree is clean and every commit is on a remote.
+pushed() {
+  [[ -z $(x $1 git status --porcelain) ]] && [[ -z $(x $1 git log --oneline --branches --not --remotes) ]]
+}
+
+session() {  # name: start claude with secrets
+  local n=$1 r
+  up $n; load_claude; load_identity
+  if r=$(remote_of $n) && [[ -n $r ]]; then
+    load_pat $r
+    x $n git ls-remote -q origin &>/dev/null || die "token for $r rejected (expired?)
+  regenerate: https://github.com/settings/personal-access-tokens
+  then: box token $n"
+  fi
+  container exec -it "${ENVS[@]}" -u claude -w /work/$n box-$n claude --dangerously-skip-permissions
+}
+
+delete() { container delete -f box-$1 >/dev/null; container volume delete box-$1 &>/dev/null || true }
+
+usage() {
+  cat <<'EOF'
+usage: box <command>
+  build                          build the sandbox image (Containerfile + claude-home/)
+  login                          store a Claude token in the Keychain
+  new [--name N]                 empty project (random name unless --name)
+  new --clone REPO [--name N]    clone a GitHub repo; name defaults to owner-repo
+  run NAME                       start Claude in a project
+  fresh REPO                     throwaway session; kept only if work is unpushed
+  push NAME REPO                 connect a project to an (empty) GitHub repo and push
+  token NAME                     replace the project's GitHub token
+  shell NAME                     bash in the project
+  ls | stop NAME | rm [--force] NAME
+REPO: owner/repo, https://github.com/owner/repo or git@github.com:owner/repo.git
+EOF
+}
+
+main() {
+  local cmd=${1:-help}; (( $# )) && shift
+  case $cmd in
+    build) container build -t $IMG -f $DIR/Containerfile $DIR ;;
+    login)
+      print "Approve in the browser, then copy the printed token."
+      container run --rm -it $IMG claude setup-token
+      kc_set claude "the Claude token" ;;
+    new)
+      local name repo
+      while (( $# )); do case $1 in
+        --name) name=$2; shift 2 ;; --clone) repo=$(repo_of $2) || exit 1; shift 2 ;; *) die "unknown arg: $1" ;;
+      esac; done
+      [[ -n $repo ]] && : ${name:=${repo/\//-}}
+      [[ -z $name ]] && until name=$(randname); [[ -z $(state $name) ]]; do :; done
+      name=${name:l}
+      [[ $name == [a-z0-9][a-z0-9_.-]# ]] || die "bad name '$name' (letters, digits, - _ .)"
+      [[ -n $repo ]] && load_pat $repo
+      create $name vol
+      if [[ -n $repo ]]; then clone $name $repo; else x $name git init -q -b main; fi
+      print "created $name" ;;
+    run)   [[ -n $1 ]] || die "usage: box run NAME"; session $1 ;;
+    fresh)
+      local repo n=fresh-$(randname)
+      repo=$(repo_of ${1:?usage: box fresh REPO}) || exit 1
+      load_claude; load_pat $repo; create $n; clone $n $repo  # load secrets first: a die later would skip the guard
+      session $n || true
+      if pushed $n; then delete $n; print "clean, deleted $n"
+      else print "unpushed work: kept $n\n  resume:  box run $n\n  discard: box rm --force $n"; fi ;;
+    push)
+      local n=${1:?usage: box push NAME REPO} repo
+      repo=$(repo_of ${2:?usage: box push NAME REPO}) || exit 1
+      up $n; load_pat $repo; load_identity
+      x $n git remote remove origin 2>/dev/null || true
+      x $n git remote add origin https://github.com/$repo.git
+      x $n git push -u origin HEAD || die "push failed: create $repo on GitHub (empty) first, and check the token can write it"
+      print "remote set, pushed" ;;
+    token)
+      local n=${1:?usage: box token NAME} r
+      up $n; r=$(remote_of $n); [[ -n $r ]] || die "$n has no remote: use 'box push'"
+      print "Regenerate at https://github.com/settings/personal-access-tokens"
+      kc_set github/$r "the new token for $r"; load_pat $r
+      x $n git ls-remote -q origin &>/dev/null && print "push access works" || die "token rejected" ;;
+    shell) up ${1:?usage: box shell NAME}; container exec -it -u claude -w /work/$1 box-$1 bash -l ;;
+    ls)    container ls -a --format json | jq -r '.[] | select(.configuration.id|startswith("box-"))
+             | "\(.configuration.id|ltrimstr("box-"))\t\(.status.state)"' | column -t ;;
+    stop)  need ${1:?usage: box stop NAME}; container stop box-$1 >/dev/null ;;
+    rm)
+      local force; [[ $1 == --force ]] && { force=1; shift; }
+      local n=${1:?usage: box rm [--force] NAME}
+      [[ -n $force ]] || { up $n; pushed $n || die "$n has uncommitted or unpushed work; use --force"; }
+      delete $n; print "deleted $n" ;;
+    help|-h|--help) usage ;;
+    *) usage; exit 1 ;;
+  esac
+}
+
+# Run only when executed, so tests can source the functions.
+if [[ $ZSH_EVAL_CONTEXT == toplevel ]]; then main "$@"; fi
