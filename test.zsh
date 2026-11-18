@@ -12,5 +12,8 @@ eq "$( (repo_of https://gitlab.com/a/b) 2>&1)" "error: not a GitHub repo: https:
 eq "$( (repo_of apple) 2>&1)" "error: not a GitHub repo: apple"
 [[ $(randname) == [a-z]##-[a-z]##-[a-z]## ]] || { print "FAIL: randname $(randname)"; fail=1 }
 
+# Guardrail: container machine breaks isolation (see CLAUDE.md).
+! grep -n 'container machine' ${0:A:h}/box ${0:A:h}/_box || { print 'FAIL: container machine is prohibited'; fail=1 }
+
 (( fail )) || print ok
 exit $fail

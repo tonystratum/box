@@ -6,7 +6,7 @@ A zsh wrapper around apple/container that gives each project its own sandbox VM.
 
 These are the isolation model. Each one stays true after every change:
 
-- **Plain containers only.** Create sandboxes with `container create`. `container machine` mounts `$HOME` and forwards the ssh-agent, which breaks isolation.
+- **Plain containers only. `container machine` is prohibited** in any code, script, or docs example: it mounts `$HOME` read-write, forwards the ssh-agent, and adds all capabilities. Create every sandbox with `container create`. `test.zsh` fails if `box` or `_box` mention it.
 - **Zero host mounts.** Project code lives on the `box-NAME` named volume at `/work`.
 - **Secrets enter at exec time, by name.** Pass them as `container exec -e NAME`, which copies the value from the script's environment and skips unset names. Whatever goes into `container create -e` is saved to disk with the container. A `NAME=value` argument is visible to `ps`.
 - **Secrets live in the Keychain.** Read them with `security`, under `box/claude` and `box/github/OWNER/REPO`.
