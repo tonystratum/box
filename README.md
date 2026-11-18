@@ -74,3 +74,7 @@ box fresh apple/container          # throwaway VM: deleted on exit unless work i
 ## Customizing
 
 Put your own `CLAUDE.md` and `settings.json` in `claude-home/`, then run `box build` again. The image is defined in `Containerfile`.
+
+## License
+
+[MIT](LICENSE)
