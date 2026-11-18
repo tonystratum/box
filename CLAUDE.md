@@ -11,7 +11,7 @@ These are the isolation model. Each one stays true after every change:
 - **Secrets enter at exec time, by name.** Pass them as `container exec -e NAME`, which copies the value from the script's environment and skips unset names. Whatever goes into `container create -e` is saved to disk with the container. A `NAME=value` argument is visible to `ps`.
 - **Secrets live in the Keychain.** Read them with `security`, under `box/claude` and `box/github/OWNER/REPO`.
 - **Zero host dependencies.** Use only macOS built-ins (zsh, `security`, `jq`, `column`) and the `container` CLI.
-- **The unpushed-work guard is code.** `fresh` and `rm` decide with `pushed()` and never prompt.
+- **The unpushed-work guard is code.** `new` (on exit) and `rm` decide with `pushed()` and never prompt.
 
 ## Conventions
 

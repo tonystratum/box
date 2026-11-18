@@ -20,11 +20,9 @@ _box() {
     'build:build the sandbox image'
     'login:store a Claude token in the Keychain'
     'new:create a project (empty, or --clone a GitHub repo)'
-    'run:start Claude in a project'
-    'fresh:throwaway session on a GitHub repo'
+    'run:bash in a project with secrets loaded'
     'push:connect a project to an empty GitHub repo and push'
     'token:replace a project'"'"'s GitHub token'
-    'shell:bash in a project'
     'ls:list projects'
     'stop:stop a project'
     'rm:delete a project (refuses if work is unpushed)'
@@ -36,10 +34,9 @@ _box() {
     args)
       case $line[1] in
         new)   _arguments '--name[project name]:name:' '--clone[GitHub repo to clone]:repo:_box_repos' ;;
-        run|shell|stop|token) _arguments '1:project:_box_projects' ;;
+        run|stop|token) _arguments '1:project:_box_projects' ;;
         rm)    _arguments '--force[delete even with unpushed work]' '1:project:_box_projects' ;;
         push)  _arguments '1:project:_box_projects' '2:repo:_box_repos' ;;
-        fresh) _arguments '1:repo:_box_repos' ;;
       esac ;;
   esac
 }

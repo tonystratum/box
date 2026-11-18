@@ -41,8 +41,8 @@ box push brisk-otter-lamp bob/lamp # connect an empty project to a new (empty) G
 **Daily**
 
 ```sh
-box run apple-container            # Claude, full permissions, inside the VM
-box fresh apple/container          # throwaway VM: deleted on exit unless work is unpushed
+box run apple-container            # bash inside the VM, secrets loaded
+claude --dangerously-skip-permissions   # then, inside: Claude with full permissions, VM only
 ```
 
 ## Commands
@@ -51,13 +51,11 @@ box fresh apple/container          # throwaway VM: deleted on exit unless work i
 |---|---|
 | `build` | Build `box:latest` from `Containerfile` and `claude-home/` |
 | `login` | Store a Claude token in the Keychain |
-| `new [--name N]` | Empty project (`git init`), then bash inside it |
-| `new --clone REPO [--name N]` | Clone a GitHub repo, then bash inside it; the name defaults to `owner-repo` |
-| `run NAME` | Start Claude in a project |
-| `fresh REPO` | Throwaway session; kept only if work is uncommitted or unpushed |
+| `new [--name N]` | Empty project (`git init`), then `run`; deleted on exit unless work is uncommitted or unpushed |
+| `new --clone REPO [--name N]` | Same, cloning a GitHub repo; the name defaults to `owner-repo` |
+| `run NAME` | bash inside the project (starts a stopped VM) with the Claude token, GitHub token and git identity loaded |
 | `push NAME REPO` | Set the GitHub remote and do the first push |
 | `token NAME` | Replace an expired GitHub token |
-| `shell NAME` | bash inside the project |
 | `ls`, `stop NAME`, `rm [--force] NAME` | Housekeeping; `rm` refuses to delete unpushed work |
 
 `REPO` can be `owner/repo`, `https://github.com/owner/repo`, or `git@github.com:owner/repo.git`.
