@@ -21,8 +21,8 @@ Not a goal (yet): stopping a misbehaving session from exfiltrating the secrets i
 3. Optional: put this directory on `$PATH`, and on `$fpath` (before `compinit`) for completion.
 
 **Per project**
-- `box new [--name N]` creates an empty project (`git init`) with a three-word random name unless `--name` is given.
-- `box new --clone REPO [--name N]` clones a GitHub repo. The name defaults to `owner-repo`, and creation fails if that name is taken, in which case pass `--name`. If no PAT for that repo is in the Keychain, it prints the token-creation link and asks you to paste one.
+- `box new [--name N]` creates an empty project (`git init`) with a three-word random name unless `--name` is given, then opens bash in it (`box shell`).
+- `box new --clone REPO [--name N]` clones a GitHub repo and opens bash in it. The name defaults to `owner-repo`, and creation fails if that name is taken, in which case pass `--name`. If no PAT for that repo is in the Keychain, it prints the token-creation link and asks you to paste one.
 - `box push NAME REPO` connects an empty project to a GitHub repo you created (empty) and pushes. The first push is the check that the repo exists and the token can write to it.
 - REPO can be `owner/repo`, `https://github.com/owner/repo(.git)` or `git@github.com:owner/repo.git`. The remote is always stored as https.
 

@@ -100,8 +100,8 @@ usage() {
 usage: box <command>
   build                          build the sandbox image (Containerfile + claude-home/)
   login                          store a Claude token in the Keychain
-  new [--name N]                 empty project (random name unless --name)
-  new --clone REPO [--name N]    clone a GitHub repo; name defaults to owner-repo
+  new [--name N]                 empty project (random name unless --name), then bash in it
+  new --clone REPO [--name N]    clone a GitHub repo, then bash in it; name defaults to owner-repo
   run NAME                       start Claude in a project
   fresh REPO                     throwaway session; kept only if work is unpushed
   push NAME REPO                 connect a project to an (empty) GitHub repo and push
@@ -132,7 +132,7 @@ main() {
       [[ -n $repo ]] && load_pat $repo
       create $name vol
       if [[ -n $repo ]]; then clone $name $repo; else x $name git init -q -b main; fi
-      print "created $name" ;;
+      print "created $name"; main shell $name ;;
     run)   [[ -n $1 ]] || die "usage: box run NAME"; session $1 ;;
     fresh)
       local repo n=fresh-$(randname)

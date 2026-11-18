@@ -51,8 +51,8 @@ box fresh apple/container          # throwaway VM: deleted on exit unless work i
 |---|---|
 | `build` | Build `box:latest` from `Containerfile` and `claude-home/` |
 | `login` | Store a Claude token in the Keychain |
-| `new [--name N]` | Empty project (`git init`) |
-| `new --clone REPO [--name N]` | Clone a GitHub repo; the name defaults to `owner-repo` |
+| `new [--name N]` | Empty project (`git init`), then bash inside it |
+| `new --clone REPO [--name N]` | Clone a GitHub repo, then bash inside it; the name defaults to `owner-repo` |
 | `run NAME` | Start Claude in a project |
 | `fresh REPO` | Throwaway session; kept only if work is uncommitted or unpushed |
 | `push NAME REPO` | Set the GitHub remote and do the first push |
