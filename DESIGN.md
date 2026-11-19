@@ -84,7 +84,6 @@ Not a goal (yet): stopping a misbehaving session from exfiltrating the secrets i
 
 ## Unverified
 
-Run on a Mac with apple/container: `new` (empty project), `run`, restarting a stopped project, `ls`, `rm`, the exit guard after `new`, `new --clone` of a public repo and of a private one with a real read token via `--clone-token`, every `token` verb and error path, the hidden value prompt typed by hand, `box claude login` storing the shared `claude` token, the Keychain cleanup in `rm`, the ssh-to-https rewrite, that a host `GH_TOKEN` doesn't reach a box, and tab completion (automated in `test.zsh`). The rest:
+Run on a Mac with apple/container: `new` (empty project), `run`, restarting a stopped project, `ls`, `rm`, the exit guard after `new`, `new --clone` of a public repo and of a private one with a real read token via `--clone-token`, every `token` verb and error path, the hidden value prompt typed by hand, `box claude login` storing the shared `claude` token, the Keychain cleanup in `rm`, the ssh-to-https rewrite, that a host `GH_TOKEN` doesn't reach a box, tab completion (automated in `test.zsh`), `box claude` signing Claude in through `CLAUDE_CODE_OAUTH_TOKEN`, and pushing from inside a box with a real fine-grained token. The rest:
 
-- Pushing with a real fine-grained token from inside a box.
-- `box claude` end to end: whether `claude` is signed in through `CLAUDE_CODE_OAUTH_TOKEN`, and whether its onboarding prompts appear in every new container.
+- Whether Claude's first-run onboarding prompts appear in every new container.

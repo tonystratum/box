@@ -4,7 +4,7 @@ Isolated Linux sandboxes on your Mac, built on [apple/container](https://github.
 Each project gets its own lightweight VM. Nothing is installed on or mounted from the host, and secrets stay in the macOS Keychain.
 Claude Code comes preinstalled and runs with `--dangerously-skip-permissions`, inside the VM only.
 
-> **Status:** early. Creating, entering and removing projects, cloning public and private repos, managing tokens and tab completion are tested on a Mac; pushing with a real token and Claude signing in inside a box are not yet. See [DESIGN.md](DESIGN.md) for decisions and open questions.
+> **Status:** early. The full flow is tested on a Mac: creating, entering and removing projects, cloning public and private repos, tokens, Claude signed in inside a box, pushing, and tab completion. See [DESIGN.md](DESIGN.md) for decisions and open questions.
 
 ## Requirements
 
