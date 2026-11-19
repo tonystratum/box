@@ -63,8 +63,9 @@ Not a goal (yet): stopping a misbehaving session from exfiltrating the secrets i
 - **Pasting images or the clipboard** into Claude inside the VM.
 - **`ls` details** (remote, unpushed state). Showing them means exec'ing into every container.
 
-## Unverified (written on Linux, check on first run on the Mac)
+## Unverified
 
-- The whole flow against a real apple/container install. Only `zsh -n` and `test.zsh` (URL parsing, random names) have been run.
-- Whether Claude Code's first-run onboarding prompts appear in every new container, even with `CLAUDE_CODE_OAUTH_TOKEN` set.
-- Whether `/usr/bin/jq` is present (it ships with macOS 15 and later).
+Run on a Mac with apple/container: `new` (empty project), `run`, restarting a stopped project, `ls`, `rm`, and the exit guard after `new`. The rest:
+
+- `new --clone`, `push` and `token` against real GitHub repos and tokens.
+- Whether `claude` inside a box is signed in through `CLAUDE_CODE_OAUTH_TOKEN`, and whether its first-run onboarding prompts appear in every new container.
