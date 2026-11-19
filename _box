@@ -9,15 +9,16 @@ _box_projects() {  # [running]: only boxes in that state
   _describe -t projects project p
 }
 
-# Keychain item names under box/PREFIX (dump-keychain without -d prints no values), and one item's value.
-_box_kc()  { local p=${1//./[.]}; security dump-keychain 2>/dev/null | sed -nE "s#.*\"svce\"<blob>=\"box/$p([^\"]+)\".*#\\1#p" | sort -u }
-_box_val() { security find-generic-password -s "box/$1" -w 2>/dev/null }
+# Keychain item names under box/PREFIX (dump-keychain without -d prints no values).
+_box_kc()    { local p=${1//./[.]}; security dump-keychain 2>/dev/null | sed -nE "s#.*\"svce\"<blob>=\"box/$p([^\"]+)\".*#\\1#p" | sort -u }
+# BOX/VAR → "local:NAME" or "shared:NAME". Reads grant items only, so completion can never print a token value.
+_box_grant() { security find-generic-password -s "box/grant/$1" -w 2>/dev/null }
 # Token names contain ':', which _describe reads as the name:description separator, so it is escaped below.
 
 _box_shared() {  # [box] [prefix]: shared tokens, minus those box has, only that prefix
   local -a t; local -A on; local g s n
   for g in ${(f)"$(_box_kc grant/)"}; do
-    s=$(_box_val grant/$g) && [[ $s == shared:* ]] && on[${s#*:}]+=${on[${s#*:}]:+,}${g%%/*}
+    s=$(_box_grant $g) && [[ $s == shared:* ]] && on[${s#*:}]+=${on[${s#*:}]:+,}${g%%/*}
   done
   for n in ${(f)"$(_box_kc shared/)"}; do
     [[ -n $2 && ${n%%:*} != $2 ]] && continue
@@ -33,7 +34,7 @@ _box_prefixes() {  # start of a new token name; no space after, so the label fol
 _box_tokens_of() {  # box [only-box-only]: tokens the box has
   local -a t; local v s
   for v in ${(f)"$(_box_kc grant/$1/)"}; do
-    s=$(_box_val grant/$1/$v) || continue
+    s=$(_box_grant $1/$v) || continue
     [[ -n $2 && $s != local:* ]] && continue
     t+=("${${s#*:}//:/\\:}:$v, ${${s%%:*}/local/box-only}")
   done
