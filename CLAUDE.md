@@ -25,4 +25,5 @@ These are the isolation model. Each one stays true after every change:
 
 - Run `zsh -n box && zsh -n _box && zsh test.zsh`.
 - Add a case to `test.zsh` when you change a pure helper (`repo_of`, `randname`, `tok_var`, `tok_path`), and a `ceq` line when you change what `_box` completes.
+- The main path is verified end to end on a Mac (2026-11-19). It runs `box new`, work, exit (box kept), `token add BOX gh:LABEL`, `run`, push, exit, then `rm` with no prompt. Keep it working, and re-run it by hand after changing any step of it.
 - Anything that calls `container` can only be checked on a Mac with apple/container running. When you can't run it, say so in your summary and add the item under "Unverified" in DESIGN.md.

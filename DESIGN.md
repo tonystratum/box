@@ -73,7 +73,8 @@ Not a goal (yet): stopping a misbehaving session from exfiltrating the secrets i
   - Other agents preinstalled.
   - Per-project images (a project's own Containerfile) for stacks that shouldn't share the base image.
   - More known token prefixes (registries, cloud CLIs) once each env var is checked against its tool; until then `--env`.
-  - A one-step way to start Claude in an existing box (today: `box run NAME`, then `claude`).- **Dev-server preview.** No ports are published. Options: a fixed `-p` range at create time, or browsing to the container IP.
+  - A one-step way to start Claude in an existing box (today: `box run NAME`, then `claude`).
+- **Dev-server preview.** No ports are published. Options: a fixed `-p` range at create time, or browsing to the container IP.
 - **Egress allowlist.** Network access is fully open. Only egress control (a proxy, or vmnet rules) would stop a session from leaking `CLAUDE_CODE_OAUTH_TOKEN` or `GH_TOKEN`.
 - **CPU and memory limits.** Not set yet; `-c` and `-m` exist on `container create`.
 - **Updating existing projects after `build`.** Persistent containers keep their old rootfs, and with `ubuntu:rolling` they stay on the previous release. A possible `box rebuild NAME` would recreate the container on the same volume.
@@ -84,6 +85,8 @@ Not a goal (yet): stopping a misbehaving session from exfiltrating the secrets i
 
 ## Unverified
 
-Run on a Mac with apple/container: `new` (empty project), `run`, restarting a stopped project, `ls`, `rm`, the exit guard after `new`, `new --clone` of a public repo and of a private one with a real read token via `--clone-token`, every `token` verb and error path, the hidden value prompt typed by hand, `box claude login` storing the shared `claude` token, the Keychain cleanup in `rm`, the ssh-to-https rewrite, that a host `GH_TOKEN` doesn't reach a box, tab completion (automated in `test.zsh`), `box claude` signing Claude in through `CLAUDE_CODE_OAUTH_TOKEN`, and pushing from inside a box with a real fine-grained token. The rest:
+The main path was run end to end on a Mac on 2026-11-19, and commit 6966784 was made this way: `box new`, work, exit (the box is kept with unpushed work), `box token add BOX gh:LABEL`, `box run`, commit and push, exit, then `box rm` deletes the clean box without prompting.
+
+Also run on a Mac with apple/container: `new` (empty project), `run`, restarting a stopped project, `ls`, `rm`, the exit guard after `new`, `new --clone` of a public repo and of a private one with a real read token via `--clone-token`, every `token` verb and error path, the hidden value prompt typed by hand, `box claude login` storing the shared `claude` token, the Keychain cleanup in `rm`, the ssh-to-https rewrite, that a host `GH_TOKEN` doesn't reach a box, tab completion (automated in `test.zsh`), `box claude` signing Claude in through `CLAUDE_CODE_OAUTH_TOKEN`, and pushing from inside a box with a real fine-grained token. The rest:
 
 - Whether Claude's first-run onboarding prompts appear in every new container.
