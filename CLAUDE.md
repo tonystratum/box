@@ -19,6 +19,7 @@ These are the isolation model. Each one stays true after every change:
 - **One script.** New behaviour goes into `box` as a subcommand in `main`. Every new subcommand or flag also goes into `_box` (completion), the README command table and `usage`.
 - **Errors go through `die`.** The message says what to run next.
 - **Values from `$(...)` that can fail are assigned on their own line.** For example `x=$(f) || exit 1`, or `|| die`. `local x=$(f)` and `export x=$(f)` hide the failure, so they're never used for these.
+- **Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/).** For example `feat(token): ...`, `fix: ...`, `docs: ...`, `test: ...`.
 - **The script runs `main` only when executed.** It has to stay safe to `source`, because `test.zsh` sources it.
 
 ## Verify
