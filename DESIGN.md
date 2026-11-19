@@ -35,6 +35,7 @@ Not a goal (yet): stopping a misbehaving session from exfiltrating the secrets i
 
 **Daily**
 - `box run NAME` starts the VM if it is stopped and loads the box's tokens. If it has `GH_TOKEN` and a GitHub remote, it checks the token with `git ls-remote`; a rejection is a warning with the `token replace` command, and bash still opens. Then it opens bash in `/work/NAME` with the tokens and the git identity in the environment.
+- Leaving bash leaves the VM running (it runs `sleep infinity`). `stop NAME` ends its processes and frees CPU and memory; files on the volume, the container's disk (installed tools) and tokens stay, and `run` starts it again.
 - `ls`, `stop NAME`, `rm [--force] NAME`. `rm` runs the same unpushed-work check unless `--force` is given, and deletes the box's own tokens and its links to shared ones.
 
 ## Decisions
@@ -76,14 +77,14 @@ Not a goal (yet): stopping a misbehaving session from exfiltrating the secrets i
 - **Egress allowlist.** Network access is fully open. Only egress control (a proxy, or vmnet rules) would stop a session from leaking `CLAUDE_CODE_OAUTH_TOKEN` or `GH_TOKEN`.
 - **CPU and memory limits.** Not set yet; `-c` and `-m` exist on `container create`.
 - **Updating existing projects after `build`.** Persistent containers keep their old rootfs, and with `ubuntu:rolling` they stay on the previous release. A possible `box rebuild NAME` would recreate the container on the same volume.
-- **Concurrent sessions** on one project. Not prevented.
+- **Stopping the VM on exit.** Today leaving bash keeps the VM running until `box stop`. Options, discussed 2026-11-19: (1) `run --keep` to skip an automatic stop; (2) on exit, stop only if no other session and no background process is left in the VM, so a `nohup` dev server keeps it up (preferred); (3) the exit code decides; (4) leave as is. Option 2 needs a reliable "anything else running?" check first.
+- **Concurrent sessions** on one project. Not prevented; an automatic stop on exit would have to account for them.
 - **Pasting images or the clipboard** into Claude inside the VM.
 - **`ls` details** (remote, unpushed state). Showing them means exec'ing into every container.
 
 ## Unverified
 
-Run on a Mac with apple/container: `new` (empty project), `run`, restarting a stopped project, `ls`, `rm`, the exit guard after `new`, `new --clone` of a public repo with `--clone-token`, every `token` verb and error path with dummy values, the Keychain cleanup in `rm`, the ssh-to-https rewrite, and that a host `GH_TOKEN` doesn't reach a box. The rest:
+Run on a Mac with apple/container: `new` (empty project), `run`, restarting a stopped project, `ls`, `rm`, the exit guard after `new`, `new --clone` of a public repo and of a private one with a real read token via `--clone-token`, every `token` verb and error path, the hidden value prompt typed by hand, `box claude login` storing the shared `claude` token, the Keychain cleanup in `rm`, the ssh-to-https rewrite, that a host `GH_TOKEN` doesn't reach a box, and tab completion (automated in `test.zsh`). The rest:
 
-- Pushing with a real fine-grained token, and `--clone-token` with a real token on a private repo.
-- The hidden value prompt in `token add`/`replace` (`security add-generic-password -w`), typed by hand; automated input can't reach it.
-- `box claude` and `box claude login` end to end: whether `claude` is signed in through `CLAUDE_CODE_OAUTH_TOKEN`, and whether its onboarding prompts appear in every new container.
+- Pushing with a real fine-grained token from inside a box.
+- `box claude` end to end: whether `claude` is signed in through `CLAUDE_CODE_OAUTH_TOKEN`, and whether its onboarding prompts appear in every new container.

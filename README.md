@@ -4,7 +4,7 @@ Isolated Linux sandboxes on your Mac, built on [apple/container](https://github.
 Each project gets its own lightweight VM. Nothing is installed on or mounted from the host, and secrets stay in the macOS Keychain.
 Claude Code comes preinstalled and runs with `--dangerously-skip-permissions`, inside the VM only.
 
-> **Status:** early. Creating, entering and removing projects, cloning public repos and managing tokens are tested on a Mac; pushing with a real token and Claude sign-in are not yet. See [DESIGN.md](DESIGN.md) for decisions and open questions.
+> **Status:** early. Creating, entering and removing projects, cloning public and private repos, managing tokens and tab completion are tested on a Mac; pushing with a real token and Claude signing in inside a box are not yet. See [DESIGN.md](DESIGN.md) for decisions and open questions.
 
 ## Requirements
 
@@ -20,6 +20,8 @@ git clone https://github.com/tonystratum/box ~/box
 path=(~/box $path)
 fpath=(~/box $fpath)   # tab completion; must come before compinit
 ```
+
+Completion covers every argument: boxes, a box's tokens, shared tokens and the `gh:`/`claude:` prefixes. It shows token names only, never values.
 
 ## Quick start
 
@@ -38,6 +40,14 @@ box new --clone apple/container    # clone a public repo, then bash
 box new --clone bob/private --clone-token gh:read   # private repo: shared token used for the clone only
 ```
 
+**A read token for private clones.** At <https://github.com/settings/personal-access-tokens/new> make a fine-grained token: Repository access *All repositories* (or the ones you pick), then under Repositories **+ Add permissions** → *Contents: Read-only* (GitHub adds *Metadata: Read-only*). Store it once:
+
+```sh
+box token add --shared gh:read   # paste the token; or let the first --clone-token gh:read ask for it
+```
+
+It is passed to the clone only. With *All repositories* it can read every private repo you own, so don't give it to boxes.
+
 **Pushing to GitHub.** Create the repo and a fine-grained token for it in the browser, then give the box the token:
 
 ```sh
@@ -50,7 +60,10 @@ box run brisk-otter-lamp                 # inside: git remote add origin …, gi
 ```sh
 box run apple-container                 # bash inside the VM with the box's tokens loaded
 claude --dangerously-skip-permissions   # then, inside: Claude with full permissions, VM only
+box stop apple-container                # leaving bash keeps the VM running; this frees its CPU and memory
 ```
+
+`stop` keeps everything on disk: files in `/work` (committed or not), installed tools and tokens. Only running processes end. `box run` starts it again.
 
 ## Commands
 
@@ -67,7 +80,7 @@ claude --dangerously-skip-permissions   # then, inside: Claude with full permiss
 | `token rm BOX T`, `token rm --shared T` | Take a token from a box; delete a shared token and take it from every box |
 | `token replace BOX T`, `token replace --shared T` | Enter a new value (e.g. an expired token) |
 | `token ls [BOX]` | A box's tokens; without BOX, the shared tokens and the boxes that have them |
-| `ls`, `stop NAME`, `rm [--force] NAME` | Housekeeping; `rm` refuses to delete unpushed work, and also deletes the box's own tokens |
+| `ls`, `stop NAME`, `rm [--force] NAME` | Housekeeping; `stop` keeps files and tools; `rm` refuses to delete unpushed work, and also deletes the box's own tokens |
 
 `REPO` can be `owner/repo`, `https://github.com/owner/repo`, or `git@github.com:owner/repo.git`.
 
