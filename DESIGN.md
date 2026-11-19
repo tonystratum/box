@@ -23,6 +23,7 @@ Not a goal (yet): stopping a misbehaving session from exfiltrating the secrets i
 **Per project**
 - `box new [--name N]` creates an empty project (`git init`) with a three-word random name unless `--name` is given, then opens it with `box run`. On exit, if the work tree is clean and every commit is on a remote, the project is deleted (an untouched empty project counts as clean); otherwise it is kept and the resume and discard commands are printed. The check is in the script, and it never asks you anything.
 - `box new --clone REPO [--clone-token T] [--name N]` clones a GitHub repo and opens it with `box run`, with the same exit check. The name defaults to `owner-repo`, and creation fails if that name is taken, in which case pass `--name`. For a private repo, `--clone-token T` names a shared token (asked for and stored if missing) that is passed to the clone only; the box does not keep it.
+- `--token T` (box-only) and `--shared-token T` (shared), both repeatable, give the new box tokens. Every name is checked, the name of the box must be free, and every value is asked for before anything is created; a cancelled prompt leaves nothing behind. Only the `gh` and `claude` prefixes work here; others go through `box token add … --env` afterwards. Shared ones are added first, so a box-only token for the same env var wins.
 - `box claude [same options]` is `box new` that first requires the shared `claude` token (stops before creating anything if it is missing), gives the box that token, and starts `claude --dangerously-skip-permissions` instead of bash. The exit guard runs when Claude exits.
 - REPO can be `owner/repo`, `https://github.com/owner/repo(.git)` or `git@github.com:owner/repo.git`. Inside the VM, git rewrites ssh GitHub URLs to https.
 
@@ -54,7 +55,8 @@ Not a goal (yet): stopping a misbehaving session from exfiltrating the secrets i
 | GitHub auth | A fine-grained token per repo, given to the box as `gh:LABEL` → `GH_TOKEN`, read by a git credential helper over https (also `GITHUB_TOKEN`); ssh URLs rewritten to https | Limited to one repo; allows `gh` and PRs; no repo-creating token exists anywhere |
 | Private clones | `--clone-token T`: a shared token passed to the clone only | A read token often spans many repos; the box running Claude never holds it |
 | Pushing | No `push` command: give the box a token, then push from inside | Repo creation stays in the browser; inside the box git and `gh` work as usual |
-| Cleanup | `delete()` (rm, exit guard, failed create or clone) removes the box's local tokens and grants | A reused box name never inherits an old token |
+| Cleanup | `delete()` (rm, exit guard, failed create or clone) removes the box's local tokens and grants via `forget()`; `new` also calls `forget()` before asking for tokens | A reused box name never inherits an old token, even after an interrupted `new` |
+| Tokens at creation | `new`/`claude --token T` (box-only) and `--shared-token T`, repeatable; known prefixes only; everything asked before creating | Explicit like `token add`; a typo or cancel creates nothing; `--env` stays with `token add` to keep the flags simple |
 | Secret injection | `container exec -e NAME` (copies the value from the host environment) at session start, never `create -e` | The `create` config is saved to disk; the `exec` config is not saved by the server (ContainersService.createProcess). Values also stay out of argv |
 | Git identity | Host `git config --global user.name/email` → `GIT_AUTHOR_*` and `GIT_COMMITTER_*` | Commits show as you; skipped when Xcode CLT is missing (avoids the installer pop-up) |
 | Base image | `ubuntu:rolling` + git, gh, Node, build-essential, sudo, native Claude installer | Newest packages; Node in the VM is fine |
@@ -71,9 +73,7 @@ Not a goal (yet): stopping a misbehaving session from exfiltrating the secrets i
   - Other agents preinstalled.
   - Per-project images (a project's own Containerfile) for stacks that shouldn't share the base image.
   - More known token prefixes (registries, cloud CLIs) once each env var is checked against its tool; until then `--env`.
-  - A one-step way to start Claude in an existing box (today: `box run NAME`, then `claude`).
-  - `new`/`claude --token T` to give a box tokens at creation (today: exit, `box token add`, `box run`).
-- **Dev-server preview.** No ports are published. Options: a fixed `-p` range at create time, or browsing to the container IP.
+  - A one-step way to start Claude in an existing box (today: `box run NAME`, then `claude`).- **Dev-server preview.** No ports are published. Options: a fixed `-p` range at create time, or browsing to the container IP.
 - **Egress allowlist.** Network access is fully open. Only egress control (a proxy, or vmnet rules) would stop a session from leaking `CLAUDE_CODE_OAUTH_TOKEN` or `GH_TOKEN`.
 - **CPU and memory limits.** Not set yet; `-c` and `-m` exist on `container create`.
 - **Updating existing projects after `build`.** Persistent containers keep their old rootfs, and with `ubuntu:rolling` they stay on the previous release. A possible `box rebuild NAME` would recreate the container on the same volume.

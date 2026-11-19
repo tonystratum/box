@@ -48,6 +48,8 @@ box token add --shared gh:read   # paste the token; or let the first --clone-tok
 
 It is passed to the clone only. With *All repositories* it can read every private repo you own, so don't give it to boxes.
 
+Tokens can be given at creation, too: `box claude --clone bob/app --clone-token gh:read --token gh:app`.
+
 **Pushing to GitHub.** Create the repo and a fine-grained token for it in the browser, then give the box the token:
 
 ```sh
@@ -72,6 +74,7 @@ box stop apple-container                # leaving bash keeps the VM running; thi
 | `build` | Build `box:latest` from `Containerfile` and `claude-home/` |
 | `new [--name N]` | Empty project (`git init`), then `run`; deleted on exit unless work is uncommitted or unpushed |
 | `new --clone REPO [--clone-token T] [--name N]` | Same, cloning a GitHub repo; the name defaults to `owner-repo`; `T` is a shared token used for the clone only |
+| `new … --token T --shared-token T` | Give the new box tokens at creation (repeatable): `--token` is box-only and asks for the value, `--shared-token` uses a shared one; `gh` and `claude` prefixes only. All values are asked for before anything is created |
 | `claude [same options as new]` | Same as `new`, but gives the box the shared `claude` token and starts Claude instead of bash |
 | `claude login` | Store the shared Claude token |
 | `run NAME` | bash inside the project (starts a stopped VM) with the box's tokens and your git identity loaded |

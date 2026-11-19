@@ -43,7 +43,9 @@ _box_tokens_of() {  # box [only-box-only]: tokens the box has
 _box_env_vars() { local -a v=(${(u)${${(f)"$(_box_kc grant/)"}#*/}}); _describe -t vars 'env var' v }
 
 _box_new() {  # new and claude share their options; claude also takes `login`
-  local -a specs=('--name[project name]:name:' '--clone[GitHub repo to clone (owner/repo or URL)]:repo:')
+  local -a specs=('--name[project name]:name:' '--clone[GitHub repo to clone (owner/repo or URL)]:repo:'
+                  '*--token[box-only token for the new box (repeatable)]:token:{_box_prefixes}'
+                  '*--shared-token[shared token for the new box (repeatable)]:token:{_box_shared}')
   (( ${words[(I)--clone]} )) && specs+=('--clone-token[shared gh token used for the clone only]:token:{_box_shared "" gh}')
   if [[ $words[1] == claude ]]; then
     [[ $words[2] == login ]] && (( CURRENT > 2 )) && { _message 'no more arguments'; return 1 }

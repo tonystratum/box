@@ -116,8 +116,11 @@ session() {  # name [cmd...]: bash (or cmd) with the box's tokens and git identi
 }
 
 delete() {  # name: container, volume, and the box's own tokens and grants
-  local k
   container delete -f box-$1 >/dev/null; container volume delete box-$1 &>/dev/null || true
+  forget $1
+}
+forget() {  # name: the box's own tokens and grants, so a reused name never inherits them
+  local k
   for k in ${(f)"$(kc_ls local/$1/)"}; do kc_del local/$1/$k; done
   for k in ${(f)"$(kc_ls grant/$1/)"}; do kc_del grant/$1/$k; done
 }
@@ -209,10 +212,10 @@ usage() {
   cat <<'EOF'
 usage: box <command>
   build                                       build the sandbox image (Containerfile + claude-home/)
-  new [--name N] [--clone REPO [--clone-token T]]
+  new [--name N] [--clone REPO [--clone-token T]] [--token T]... [--shared-token T]...
                                               new project (empty, or a clone), then run; deleted on exit unless work is unpushed
-  claude [--name N] [--clone REPO [--clone-token T]]
-                                              same as new, but gives the box the shared claude token and starts claude
+                                              --token: box-only token (asks for it); --shared-token: shared one; gh and claude prefixes only
+  claude [same options as new]                same as new, but gives the box the shared claude token and starts claude
   claude login                                store the shared Claude token
   run NAME                                    bash in the project with its tokens loaded
   token add BOX [--shared] [--env VAR] T      give BOX token T (asks for the value if not stored); takes effect at the next run
@@ -240,11 +243,14 @@ main() {
         kc_set shared/claude "the Claude token" || die "token not stored"
         return 0
       fi
-      local name repo ctok cvar v
-      local -a run
+      local name repo ctok cvar v t
+      local -a run toks stoks
       while (( $# )); do case $1 in
         --name) name=$2; shift 2 ;; --clone) repo=$(repo_of $2) || exit 1; shift 2 ;;
-        --clone-token) ctok=${2:?--clone-token needs a token name}; shift 2 ;; *) die "unknown arg: $1" ;;
+        --clone-token) ctok=${2:?--clone-token needs a token name}; shift 2 ;;
+        --token) toks+=(${2:?--token needs a token name}); shift 2 ;;
+        --shared-token) stoks+=(${2:?--shared-token needs a token name}); shift 2 ;;
+        *) die "unknown arg: $1" ;;
       esac; done
       [[ -n $ctok && -z $repo ]] && die "--clone-token needs --clone"
       if [[ $cmd == claude ]]; then
@@ -255,6 +261,15 @@ main() {
       [[ -z $name ]] && until name=$(randname); [[ -z $(state $name) ]]; do :; done
       name=${name:l}
       [[ $name == [a-z0-9][a-z0-9_.-]# ]] || die "bad name '$name' (letters, digits, - _ .)"
+      # Tokens: check every name and ask for every value before anything is created.
+      [[ -z $(state $name) ]] || die "project '$name' exists; use --name"
+      forget $name  # leftovers from an earlier box of this name (e.g. an interrupted new)
+      for t in $toks $stoks; do
+        tok_name $t
+        v=$(tok_var $t 2>/dev/null) || die "--token $t: at creation only the gh and claude prefixes work; for others, after creating: box token add $name --env VAR $t"
+      done
+      for t in $stoks; do kc_get shared/$t >/dev/null || kc_set shared/$t "the shared token $t" || die "token not stored"; done
+      for t in $toks; do kc_set local/$name/$t "the value for $t (only for $name)" || { forget $name; die "token not stored; nothing was created"; }; done
       if [[ -n $ctok ]]; then
         cvar=$(tok_var $ctok) || exit 1
         kc_get shared/$ctok >/dev/null || kc_set shared/$ctok "the shared token $ctok" || die "token not stored"
@@ -265,7 +280,11 @@ main() {
       if [[ -n $repo ]]; then clone $name $repo; else x $name git init -q -b main; fi
       [[ -n $cvar ]] && unset $cvar  # clone only: exec -e skips unset names, so the box never sees it
       [[ $cmd == claude ]] && kc_put grant/$name/CLAUDE_CODE_OAUTH_TOKEN shared:claude
-      print "created $name"; session $name $run || true
+      # Shared first, so a box-only token for the same env var replaces it (box-only wins).
+      for t in $stoks; do token add $name --shared $t >/dev/null; done
+      for t in $toks; do token add $name $t >/dev/null; done
+      print "created $name"; (( $#toks + $#stoks )) && token ls $name
+      session $name $run || true
       reap $name ;;
     run)   [[ -n $1 ]] || die "usage: box run NAME"; session $1 ;;
     token) token "$@" ;;
