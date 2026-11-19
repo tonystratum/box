@@ -25,6 +25,8 @@ for bad in GH:read gh: gh:a:b :read 'gh read' gh/read; do
   eq "$( (tok_var $bad) 2>&1)" "error: bad token name '$bad' (prefix[:label], lowercase letters, digits, _ . -)"
 done
 eq "$( (tok_var npm:ci npm_token) 2>&1)" "error: bad env var 'npm_token'"
+eq "$( (tok_name npm:ci) 2>&1)" ""  # storing a shared token checks the name, not the prefix
+eq "$( (tok_name gh:a:b) 2>&1)" "error: bad token name 'gh:a:b' (prefix[:label], lowercase letters, digits, _ . -)"
 eq "$(tok_path box-1 local:gh:push)" local/box-1/gh:push
 eq "$(tok_path box-1 shared:gh:read)" shared/gh:read
 

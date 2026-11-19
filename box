@@ -29,10 +29,11 @@ randname() {
   print -r -- ${a[RANDOM%32+1]}-${b[RANDOM%32+1]}-${c[RANDOM%32+1]}
 }
 
-# Env var for token NAME (prefix[:label]): VAR if given, else picked by the prefix.
-# ':' separates because POSIX command names never contain it, while '-' and '.' are common.
+# Token NAME is prefix[:label]. ':' separates because POSIX command names never contain it, while '-' and '.' are common.
+tok_name() { [[ $1 == [a-z0-9][a-z0-9_.-]#(|:[a-z0-9][a-z0-9_.-]#) ]] || die "bad token name '$1' (prefix[:label], lowercase letters, digits, _ . -)" }
+# Env var for token NAME: VAR if given, else picked by the prefix.
 tok_var() {
-  [[ $1 == [a-z0-9][a-z0-9_.-]#(|:[a-z0-9][a-z0-9_.-]#) ]] || die "bad token name '$1' (prefix[:label], lowercase letters, digits, _ . -)"
+  tok_name $1
   if [[ -n $2 ]]; then
     [[ $2 == [A-Z_][A-Z0-9_]# ]] || die "bad env var '$2'"
     print -r -- $2; return 0
@@ -133,7 +134,15 @@ token() {  # verb args...
   esac; done
   case $verb in
     add)
-      (( $#args == 2 )) || die "usage: box token add BOX [--shared] [--env VAR] NAME"
+      if [[ -n $shared ]] && (( $#args == 1 )); then  # store a shared token without giving it to a box
+        name=$args[1]; tok_name $name
+        [[ -z $env ]] || die "--env goes with a box: box token add BOX --shared --env $env $name"
+        kc_get shared/$name >/dev/null && { print "shared $name is already stored (new value: box token replace --shared $name)"; return 0 }
+        kc_set shared/$name "the value for $name" || die "token not stored"
+        print "stored shared $name; give it to a box with: box token add BOX --shared $name"
+        return 0
+      fi
+      (( $#args == 2 )) || die "usage: box token add BOX [--shared] [--env VAR] NAME | box token add --shared NAME"
       box=$args[1] name=$args[2]; need $box
       var=$(tok_var $name $env) || exit 1
       src=${${shared:+shared}:-local}:$name
@@ -206,6 +215,7 @@ usage: box <command>
   claude login                                store the shared Claude token
   run NAME                                    bash in the project with its tokens loaded
   token add BOX [--shared] [--env VAR] T      give BOX token T (asks for the value if not stored); takes effect at the next run
+  token add --shared T                        store shared token T without giving it to a box
   token rm BOX T | token rm --shared T        take T from BOX | delete shared T and take it from every box
   token replace BOX T | replace --shared T    enter a new value
   token ls [BOX]                              BOX's tokens | shared tokens and the boxes that have them

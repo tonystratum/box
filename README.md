@@ -63,6 +63,7 @@ claude --dangerously-skip-permissions   # then, inside: Claude with full permiss
 | `claude login` | Store the shared Claude token |
 | `run NAME` | bash inside the project (starts a stopped VM) with the box's tokens and your git identity loaded |
 | `token add BOX [--shared] [--env VAR] T` | Give a box a token; asks for the value if it isn't stored; takes effect at the next `run` |
+| `token add --shared T` | Store a shared token without giving it to a box (e.g. a read token for `--clone-token`) |
 | `token rm BOX T`, `token rm --shared T` | Take a token from a box; delete a shared token and take it from every box |
 | `token replace BOX T`, `token replace --shared T` | Enter a new value (e.g. an expired token) |
 | `token ls [BOX]` | A box's tokens; without BOX, the shared tokens and the boxes that have them |

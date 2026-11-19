@@ -29,7 +29,7 @@ Not a goal (yet): stopping a misbehaving session from exfiltrating the secrets i
 **Tokens**
 - A box gets no tokens by default. `box token add BOX [--shared] [--env VAR] T` gives it one, asking for the value if it isn't stored yet; it takes effect at the next `box run` (a running shell can't receive new env vars).
 - T is `prefix[:label]`. The prefix picks the env var: `gh` → `GH_TOKEN`, `claude` → `CLAUDE_CODE_OAUTH_TOKEN`. Other prefixes need `--env VAR` on every add, with no guarantee the tool reads it.
-- Without `--shared` a token belongs to that box alone. With `--shared` it is stored once and can be given to any box. One env var per box: a box-only token wins over a shared one, and otherwise a later add replaces the earlier one.
+- Without `--shared` a token belongs to that box alone. With `--shared` it is stored once and can be given to any box. `token add --shared T` with no box only stores it (asking for the value, or saying it is already stored); it checks the name but not the prefix, since the env var belongs to each box's grant, so `--env` there is an error. One env var per box: a box-only token wins over a shared one, and otherwise a later add replaces the earlier one.
 - `token rm BOX T` takes a token from a box (deleting it if box-only); `token rm --shared T` deletes a shared token and lists the boxes it was taken from. `token replace` enters a new value; `token ls [BOX]` lists names, never values.
 - Pushing a new project: create the repo and a fine-grained token in the browser, `box token add NAME gh:LABEL`, then `git remote add` + `git push` inside the box (or ask Claude).
 
