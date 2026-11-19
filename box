@@ -108,8 +108,9 @@ session() {  # name [cmd...]: bash (or cmd) with the box's tokens and git identi
   local n=$1 g; shift
   (( $# )) || set -- bash -l
   up $n; load_tokens $n; load_identity
-  if (( ${ENVS[(I)GH_TOKEN]} )) && [[ $(x $n git remote get-url origin 2>/dev/null) == https://github.com/* ]]; then
-    x $n git ls-remote -q origin &>/dev/null || { g=$(kc_get grant/$n/GH_TOKEN) || g=; print -u2 "warning: GitHub rejected GH_TOKEN (expired?): $(replace_hint $n $g)"; }
+  # Check only a token the box was given; ENVS can also hold a --clone-token that was unset after the clone.
+  if g=$(kc_get grant/$n/GH_TOKEN) && [[ $(x $n git remote get-url origin 2>/dev/null) == https://github.com/* ]]; then
+    x $n git ls-remote -q origin &>/dev/null || print -u2 "warning: GitHub rejected GH_TOKEN (expired?): $(replace_hint $n $g)"
   fi
   container exec -it "${ENVS[@]}" -u claude -w /work/$n box-$n "$@"
 }
