@@ -1,47 +1,81 @@
 #compdef box
 # Install: put this directory on $fpath before compinit, e.g. fpath=(~/box $fpath)
 
-_box_projects() {
+_box_projects() {  # [running]: only boxes in that state
   local -a p
-  p=(${(f)"$(container ls -a --format json 2>/dev/null | jq -r '.[] | select(.configuration.id|startswith("box-"))
+  p=(${(f)"$(container ls -a --format json 2>/dev/null | jq -r --arg only "$1" '.[] | select(.configuration.id|startswith("box-"))
+       | select($only == "" or .status.state == $only)
        | "\(.configuration.id|ltrimstr("box-")):\(.status.state)"')"})
   _describe -t projects project p
 }
 
-# Keychain item names under box/PREFIX (dump-keychain without -d prints no values).
-_box_kc() {
-  local p=${1//./[.]}
-  security dump-keychain 2>/dev/null | sed -nE "s#.*\"svce\"<blob>=\"box/$p([^\"]+)\".*#\\1#p" | sort -u
-}
-# Token names contain ':', which _describe reads as the description separator, so escape it.
-_box_shared() { local -a t=(${(f)"$(_box_kc shared/)"}); t=(${t//:/\\:}); _describe -t tokens 'shared token' t }
-_box_tokens_of() {  # tokens box $1 has; box-only ones are listed for that box alone
-  local -a t; local g s
-  for g in ${(f)"$(_box_kc grant/$1/)"}; do
-    s=$(security find-generic-password -s box/grant/$1/$g -w 2>/dev/null) && t+=(${s#*:})
+# Keychain item names under box/PREFIX (dump-keychain without -d prints no values), and one item's value.
+_box_kc()  { local p=${1//./[.]}; security dump-keychain 2>/dev/null | sed -nE "s#.*\"svce\"<blob>=\"box/$p([^\"]+)\".*#\\1#p" | sort -u }
+_box_val() { security find-generic-password -s "box/$1" -w 2>/dev/null }
+# Token names contain ':', which _describe reads as the name:description separator, so it is escaped below.
+
+_box_shared() {  # [box] [prefix]: shared tokens, minus those box has, only that prefix
+  local -a t; local -A on; local g s n
+  for g in ${(f)"$(_box_kc grant/)"}; do
+    s=$(_box_val grant/$g) && [[ $s == shared:* ]] && on[${s#*:}]+=${on[${s#*:}]:+,}${g%%/*}
   done
-  t=(${t//:/\\:}); _describe -t tokens "token on $1" t
+  for n in ${(f)"$(_box_kc shared/)"}; do
+    [[ -n $2 && ${n%%:*} != $2 ]] && continue
+    [[ -n $1 && ,${on[$n]}, == *,$1,* ]] && continue
+    t+=("${n//:/\\:}:shared, on ${on[$n]:-no box}")
+  done
+  _describe -t shared 'shared token' t
+}
+_box_prefixes() {  # start of a new token name; no space after, so the label follows
+  local -a p=('gh\::GH_TOKEN, read by gh and git' 'claude\::CLAUDE_CODE_OAUTH_TOKEN, read by claude')
+  _describe -t prefixes 'new token (prefix:label)' p -S ''
+}
+_box_tokens_of() {  # box [only-box-only]: tokens the box has
+  local -a t; local v s
+  for v in ${(f)"$(_box_kc grant/$1/)"}; do
+    s=$(_box_val grant/$1/$v) || continue
+    [[ -n $2 && $s != local:* ]] && continue
+    t+=("${${s#*:}//:/\\:}:$v, ${${s%%:*}/local/box-only}")
+  done
+  _describe -t tokens "token on $1" t
+}
+_box_env_vars() { local -a v=(${(u)${${(f)"$(_box_kc grant/)"}#*/}}); _describe -t vars 'env var' v }
+
+_box_new() {  # new and claude share their options; claude also takes `login`
+  local -a specs=('--name[project name]:name:' '--clone[GitHub repo to clone (owner/repo or URL)]:repo:')
+  (( ${words[(I)--clone]} )) && specs+=('--clone-token[shared gh token used for the clone only]:token:{_box_shared "" gh}')
+  if [[ $words[1] == claude ]]; then
+    [[ $words[2] == login ]] && (( CURRENT > 2 )) && { _message 'no more arguments'; return 1 }
+    (( CURRENT == 2 )) && specs+=('1:: :((login\:"store the shared Claude token"))')
+  fi
+  _arguments $specs
 }
 
 _box_token() {
-  local curcontext=$curcontext state line
-  local -a verbs=('add:give a box a token' 'rm:take a token away, or delete a shared one'
+  local curcontext=$curcontext state line verb shared
+  local -a verbs=('add:give a box a token, or store a shared one' 'rm:take a token away, or delete a shared one'
                   'replace:enter a new value for a token' 'ls:list a box'"'"'s tokens, or the shared ones')
   _arguments -C '1:verb:->verb' '*::arg:->args'
   case $state in
     verb) _describe -t verbs 'token command' verbs ;;
     args)
-      case $line[1] in
-        add) _arguments '--shared[shared: other boxes can be given it too]' '--env[env var to inject it as]:VAR:' \
-               '1:box:_box_projects' '2:token:_box_shared' ;;
+      verb=$line[1] shared=${words[(I)--shared]}
+      case $verb in
+        add)
+          _arguments -C '--shared[shared: stored once, any box can be given it]' '--env[env var to give it as]:env var:{_box_env_vars}' \
+            '1:box:->first' '2:token:->tok'
+          case $state in
+            first) _box_projects; (( shared )) && { _box_shared; _box_prefixes } ;;  # --shared T alone stores T
+            tok)   (( shared )) && _box_shared $line[1]; _box_prefixes ;;
+          esac ;;
         rm|replace)
-          if (( ${words[(I)--shared]} )); then
-            _arguments '--shared[act on a shared token]' '1:token:_box_shared'
+          if (( shared )); then
+            _arguments '--shared[act on a shared token]' '1:shared token:{_box_shared}'
           else
-            _arguments -C '--shared[act on a shared token]' '1:box:_box_projects' '2:token:->tok'
-            [[ $state == tok ]] && _box_tokens_of $line[1]
+            _arguments -C '--shared[act on a shared token]' '1:box:{_box_projects}' '2:token:->tok'
+            [[ $state == tok ]] && _box_tokens_of $line[1] ${${(M)verb:#replace}:+1}  # replace: shared ones need --shared
           fi ;;
-        ls) _arguments '1:box:_box_projects' ;;
+        ls) _arguments '1:box:{_box_projects}' ;;
       esac ;;
   esac
 }
@@ -57,19 +91,17 @@ _box() {
     'stop:stop a project'
     'rm:delete a project and its tokens (refuses if work is unpushed)'
   )
-  local -a newargs=('--name[project name]:name:' '--clone[GitHub repo to clone]:repo:'
-                    '--clone-token[shared token used for the clone only]:token:_box_shared')
   local curcontext=$curcontext state line
   _arguments -C '1:command:->cmd' '*::arg:->args'
   case $state in
     cmd) _describe -t commands command cmds ;;
     args)
       case $line[1] in
-        new)    _arguments $newargs ;;
-        claude) _arguments $newargs '1:: :((login\:"store the shared Claude token"))' ;;
-        token)  _box_token ;;
-        run|stop) _arguments '1:project:_box_projects' ;;
-        rm)     _arguments '--force[delete even with unpushed work]' '1:project:_box_projects' ;;
+        new|claude) _box_new ;;
+        token) _box_token ;;
+        run)   _arguments '1:project:{_box_projects}' ;;
+        stop)  _arguments '1:running project:{_box_projects running}' ;;
+        rm)    _arguments '--force[delete even with unpushed work]' '1:project:{_box_projects}' ;;
       esac ;;
   esac
 }

@@ -59,6 +59,8 @@ Not a goal (yet): stopping a misbehaving session from exfiltrating the secrets i
 | Base image | `ubuntu:rolling` + git, gh, Node, build-essential, sudo, native Claude installer | Newest packages; Node in the VM is fine |
 | Claude settings | `claude-home/` baked into the image at `~/.claude` | Same setup everywhere; rebuild after editing |
 | Implementation | One zsh script + `_box` completion | Nothing to install or build |
+| Completion | Every position completes from live state (boxes, their tokens, shared tokens, env vars in use, `gh:`/`claude:` prefixes), filtered by what is typed; `--clone` repos stay free text | Listing GitHub repos would need a token and network access from the host |
+| Completion tests | `test.zsh` types into a real interactive zsh through `zsh/zpty` (ships with zsh), with `container` and `security` stubbed | Tests the real `_box` without touching boxes or the Keychain; no added dependency |
 | Names | Container and volume `box-NAME`; empty projects get `adj-animal-thing` | `ls` and completion find projects by the `box-` prefix |
 
 ## Deferred
@@ -85,4 +87,3 @@ Run on a Mac with apple/container: `new` (empty project), `run`, restarting a st
 - Pushing with a real fine-grained token, and `--clone-token` with a real token on a private repo.
 - The hidden value prompt in `token add`/`replace` (`security add-generic-password -w`), typed by hand; automated input can't reach it.
 - `box claude` and `box claude login` end to end: whether `claude` is signed in through `CLAUDE_CODE_OAUTH_TOKEN`, and whether its onboarding prompts appear in every new container.
-- Tab completion in `_box` (only `zsh -n` has been run).
