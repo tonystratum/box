@@ -9,9 +9,12 @@ RUN apt-get update \
 RUN useradd -m -s /bin/bash claude \
  && echo 'claude ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/claude
 
-# Git over https authenticates with the per-repo PAT injected as GH_TOKEN at exec time.
+# Git over https authenticates with GH_TOKEN (or GITHUB_TOKEN) injected at exec time.
+# The VM has no ssh keys, so ssh GitHub URLs are rewritten to https.
 RUN git config --system credential.https://github.com.helper \
-      '!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
+      '!f() { echo username=x-access-token; echo "password=${GH_TOKEN:-$GITHUB_TOKEN}"; }; f' \
+ && git config --system --add url.https://github.com/.insteadOf git@github.com: \
+ && git config --system --add url.https://github.com/.insteadOf ssh://git@github.com/
 
 USER claude
 RUN curl -fsSL https://claude.ai/install.sh | bash

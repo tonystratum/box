@@ -6,8 +6,8 @@ IMG=box:latest
 DIR=${0:A:h}
 # Secrets/identity are passed by name only: `container exec -e NAME` copies the
 # value from our environment and skips unset names, so values never hit argv or disk.
-ENVS=(-e CLAUDE_CODE_OAUTH_TOKEN -e GH_TOKEN
-      -e GIT_AUTHOR_NAME -e GIT_AUTHOR_EMAIL -e GIT_COMMITTER_NAME -e GIT_COMMITTER_EMAIL)
+# load_tokens appends each token the box was given.
+ENVS=(-e GIT_AUTHOR_NAME -e GIT_AUTHOR_EMAIL -e GIT_COMMITTER_NAME -e GIT_COMMITTER_EMAIL)
 
 die() { print -u2 -- "error: $*"; exit 1 }
 
@@ -29,18 +29,51 @@ randname() {
   print -r -- ${a[RANDOM%32+1]}-${b[RANDOM%32+1]}-${c[RANDOM%32+1]}
 }
 
+# Env var for token NAME (prefix[:label]): VAR if given, else picked by the prefix.
+# ':' separates because POSIX command names never contain it, while '-' and '.' are common.
+tok_var() {
+  [[ $1 == [a-z0-9][a-z0-9_.-]#(|:[a-z0-9][a-z0-9_.-]#) ]] || die "bad token name '$1' (prefix[:label], lowercase letters, digits, _ . -)"
+  if [[ -n $2 ]]; then
+    [[ $2 == [A-Z_][A-Z0-9_]# ]] || die "bad env var '$2'"
+    print -r -- $2; return 0
+  fi
+  case ${1%%:*} in
+    gh)     print GH_TOKEN ;;
+    claude) print CLAUDE_CODE_OAUTH_TOKEN ;;
+    *)      die "unknown prefix '${1%%:*}': known: gh, claude; or pass --env VAR (not guaranteed to work)" ;;
+  esac
+}
+# Keychain path of a token's value: box SRC, where SRC is local:NAME or shared:NAME.
+tok_path() { [[ $2 == local:* ]] && print -r -- local/$1/${2#local:} || print -r -- shared/${2#shared:} }
+
 state() { container ls -a --format json | jq -r --arg id box-$1 '.[] | select(.configuration.id==$id) | .status.state' }
 need()  { [[ -n $(state $1) ]] || die "no such project '$1' (see: box ls)" }
 up()    { need $1; [[ $(state $1) == running ]] || container start box-$1 >/dev/null }
 x()     { local n=$1; shift; container exec "${ENVS[@]}" -u claude -w /work/$n box-$n "$@" }  # quiet exec in repo dir
 
+# Keychain items, all under box/: local/BOX/NAME and shared/NAME hold values;
+# grant/BOX/VAR holds "local:NAME" or "shared:NAME" (which token BOX gets as VAR).
 kc_get() { security find-generic-password -s "box/$1" -w 2>/dev/null }
 kc_set() { print "Paste $2 (input hidden, asked twice):"; security add-generic-password -U -a "$USER" -s "box/$1" -w }
+kc_put() { security add-generic-password -U -a "$USER" -s "box/$1" -w "$2" }  # non-secret values only: argv is visible to ps
+kc_del() { security delete-generic-password -s "box/$1" &>/dev/null || true }
+kc_ls()  {  # item names under box/PREFIX; dump-keychain without -d prints no values
+  local p=${1//./[.]}
+  security dump-keychain 2>/dev/null | sed -nE "s#.*\"svce\"<blob>=\"box/$p([^\"]+)\".*#\\1#p" | sort -u
+}
+grants() {  # box: "VAR SRC" per line
+  local v s
+  for v in ${(f)"$(kc_ls grant/$1/)"}; do s=$(kc_get grant/$1/$v) && print -r -- "$v $s"; done
+  return 0
+}
+replace_hint() { [[ $2 == local:* ]] && print -r -- "box token replace $1 ${2#*:}" || print -r -- "box token replace --shared ${2#*:}" }
 
-load_claude() {
-  # Warn only: the shell works without it, just not a signed-in claude.
-  CLAUDE_CODE_OAUTH_TOKEN=$(kc_get claude) || { print -u2 "no Claude token, claude won't be signed in: run 'box login'"; return 0; }
-  export CLAUDE_CODE_OAUTH_TOKEN
+load_tokens() {  # box: export each token it was given, and pass it by name
+  local v s val
+  for v s in $(grants $1); do
+    val=$(kc_get $(tok_path $1 $s)) || { print -u2 "token ${s#*:} ($v) is missing from the Keychain: box token rm $1 ${s#*:}"; continue }
+    export "$v=$val"; ENVS+=(-e $v)
+  done
 }
 load_identity() {
   # Skip if Xcode CLT is missing: the /usr/bin/git stub would pop an installer dialog.
@@ -48,17 +81,6 @@ load_identity() {
   GIT_AUTHOR_NAME=$(git config --global user.name) GIT_AUTHOR_EMAIL=$(git config --global user.email) || :
   export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME=$GIT_AUTHOR_NAME GIT_COMMITTER_EMAIL=$GIT_AUTHOR_EMAIL
 }
-# Ensure a PAT for owner/repo is in the Keychain (prompting if missing) and exported as GH_TOKEN.
-load_pat() {
-  if ! GH_TOKEN=$(kc_get github/$1); then
-    print "Create a fine-grained PAT: https://github.com/settings/personal-access-tokens/new"
-    print "  Repository access: only $1    Permissions: Contents read/write (+ Pull requests if you want PRs)"
-    kc_set github/$1 "the token for $1"
-    GH_TOKEN=$(kc_get github/$1) || die "token not stored"
-  fi
-  export GH_TOKEN
-}
-remote_of() { x $1 git remote get-url origin 2>/dev/null | sed -E 's#^https://github.com/##; s#\.git$##' }
 
 # Create + start a container with its box-NAME volume at /work.
 create() {
@@ -68,12 +90,12 @@ create() {
   container create --name box-$n --init -l box=1 -v box-$n:/work $IMG sleep infinity >/dev/null
   container start box-$n >/dev/null
   container exec -u root box-$n sh -c "mkdir -p /work/$n && chown -R claude:claude /work" \
-    || { container delete -f box-$n >/dev/null; container volume delete box-$n &>/dev/null; die "setup of $n failed; nothing was kept"; }
+    || { delete $n; die "setup of $n failed; nothing was kept"; }
 }
 
 clone() {  # name owner/repo
   container exec "${ENVS[@]}" -u claude -w /work box-$1 git clone -q https://github.com/$2.git $1 \
-    || { container delete -f box-$1 >/dev/null; container volume delete box-$1 &>/dev/null; die "clone failed: check the token can read $2"; }
+    || { delete $1; die "clone failed: check that $2 exists, and pass --clone-token for a private repo"; }
 }
 
 # Hard-coded exit guard: true only if the work tree is clean and every commit is on a remote.
@@ -81,36 +103,117 @@ pushed() {
   [[ -z $(x $1 git status --porcelain) ]] && [[ -z $(x $1 git log --oneline --branches --not --remotes) ]]
 }
 
-session() {  # name: bash with secrets loaded; start claude from it if needed
-  local n=$1 r
-  up $n; load_claude; load_identity
-  if r=$(remote_of $n) && [[ -n $r ]]; then
-    load_pat $r
-    x $n git ls-remote -q origin &>/dev/null || die "token for $r rejected (expired?)
-  regenerate: https://github.com/settings/personal-access-tokens
-  then: box token $n"
+session() {  # name [cmd...]: bash (or cmd) with the box's tokens and git identity
+  local n=$1 g; shift
+  (( $# )) || set -- bash -l
+  up $n; load_tokens $n; load_identity
+  if (( ${ENVS[(I)GH_TOKEN]} )) && [[ $(x $n git remote get-url origin 2>/dev/null) == https://github.com/* ]]; then
+    x $n git ls-remote -q origin &>/dev/null || { g=$(kc_get grant/$n/GH_TOKEN) || g=; print -u2 "warning: GitHub rejected GH_TOKEN (expired?): $(replace_hint $n $g)"; }
   fi
-  container exec -it "${ENVS[@]}" -u claude -w /work/$n box-$n bash -l
+  container exec -it "${ENVS[@]}" -u claude -w /work/$n box-$n "$@"
 }
 
-delete() { container delete -f box-$1 >/dev/null; container volume delete box-$1 &>/dev/null || true }
+delete() {  # name: container, volume, and the box's own tokens and grants
+  local k
+  container delete -f box-$1 >/dev/null; container volume delete box-$1 &>/dev/null || true
+  for k in ${(f)"$(kc_ls local/$1/)"}; do kc_del local/$1/$k; done
+  for k in ${(f)"$(kc_ls grant/$1/)"}; do kc_del grant/$1/$k; done
+}
 
 reap() {  # name: on session exit, delete only if pushed(), else say how to resume
   if pushed $1; then delete $1; print "clean, deleted $1"
   else print "unpushed work: kept $1\n  resume:  box run $1\n  discard: box rm --force $1"; fi
 }
 
+token() {  # verb args...
+  local verb=$1 shared env box name var src cur g; (( $# )) && shift
+  local -a args used; local -A on
+  while (( $# )); do case $1 in
+    --shared) shared=1; shift ;; --env) env=${2:?--env needs VAR}; shift 2 ;; -*) die "unknown arg: $1" ;; *) args+=($1); shift ;;
+  esac; done
+  case $verb in
+    add)
+      (( $#args == 2 )) || die "usage: box token add BOX [--shared] [--env VAR] NAME"
+      box=$args[1] name=$args[2]; need $box
+      var=$(tok_var $name $env) || exit 1
+      src=${${shared:+shared}:-local}:$name
+      cur=$(kc_get grant/$box/$var) || cur=
+      [[ $cur == $src ]] && { print "$box already has $name"; return 0 }
+      [[ -n $shared && $cur == local:* ]] && die "$box has box-only ${cur#*:} as $var, which wins over shared: box token rm $box ${cur#*:} first"
+      kc_get $(tok_path $box $src) >/dev/null || kc_set $(tok_path $box $src) "the value for $name" || die "token not stored"
+      kc_put grant/$box/$var $src
+      # A replaced box-only token is dropped unless another var still uses it.
+      [[ $cur == local:* ]] && [[ " $(grants $box) " != *" $cur"[[:space:]]* ]] && kc_del local/$box/${cur#*:}
+      print "added $name to $box as $var${cur:+ (replaces ${cur#*:})}; takes effect at the next 'box run $box'" ;;
+    rm)
+      if [[ -n $shared ]]; then
+        (( $#args == 1 )) || die "usage: box token rm --shared NAME"
+        name=$args[1]; kc_get shared/$name >/dev/null || die "no shared token $name (see: box token ls)"
+        for g in ${(f)"$(kc_ls grant/)"}; do
+          [[ $(kc_get grant/$g) == shared:$name ]] && { kc_del grant/$g; used+=(${g%%/*}) }
+        done
+        kc_del shared/$name; used=(${(u)used})
+        print "deleted shared $name; removed from: ${${(j:, :)used}:-no boxes}"
+      else
+        (( $#args == 2 )) || die "usage: box token rm BOX NAME | box token rm --shared NAME"
+        box=$args[1] name=$args[2]
+        for var src in $(grants $box); do
+          [[ ${src#*:} == $name ]] || continue
+          kc_del grant/$box/$var; used+=($var)
+          [[ $src == local:* ]] && kc_del local/$box/$name
+        done
+        (( $#used )) || die "$box has no $name (see: box token ls $box)"
+        print "removed $name from $box"
+      fi ;;
+    replace)
+      if [[ -n $shared ]]; then
+        (( $#args == 1 )) || die "usage: box token replace --shared NAME"
+        name=$args[1]; kc_get shared/$name >/dev/null || die "no shared token $name: box token add BOX --shared $name"
+        kc_set shared/$name "the new value for $name" || die "token not stored"
+        print "replaced shared $name; boxes get it at their next 'box run'"
+      else
+        (( $#args == 2 )) || die "usage: box token replace BOX NAME | box token replace --shared NAME"
+        box=$args[1] name=$args[2]
+        if ! kc_get local/$box/$name >/dev/null; then
+          [[ " $(grants $box) " == *" shared:$name"[[:space:]]* ]] && die "$name is shared: box token replace --shared $name"
+          die "$box has no $name: box token add $box $name"
+        fi
+        kc_set local/$box/$name "the new value for $name" || die "token not stored"
+        print "replaced $name on $box; takes effect at the next 'box run $box'"
+      fi ;;
+    ls)
+      if (( $#args )); then
+        for var src in $(grants $args[1]); do print -r -- "$var ${src#*:} ${${src%%:*}/local/box-only}"; done | column -t
+      else
+        for g in ${(f)"$(kc_ls grant/)"}; do
+          src=$(kc_get grant/$g) || continue
+          [[ $src == shared:* ]] && on[${src#*:}]=${on[${src#*:}]:+${on[${src#*:}]},}${g%%/*}
+        done
+        for name in ${(f)"$(kc_ls shared/)"}; do print -r -- "$name ${on[$name]:--}"; done | column -t
+      fi ;;
+    *) die "usage: box token add|rm|replace|ls (see: box help)" ;;
+  esac
+}
+
 usage() {
   cat <<'EOF'
 usage: box <command>
-  build                          build the sandbox image (Containerfile + claude-home/)
-  login                          store a Claude token in the Keychain
-  new [--name N]                 empty project (random name unless --name), then run; deleted on exit unless work is unpushed
-  new --clone REPO [--name N]    same, cloning a GitHub repo; name defaults to owner-repo
-  run NAME                       bash in the project with secrets loaded; start claude from there
-  push NAME REPO                 connect a project to an (empty) GitHub repo and push
-  token NAME                     replace the project's GitHub token
-  ls | stop NAME | rm [--force] NAME
+  build                                       build the sandbox image (Containerfile + claude-home/)
+  new [--name N] [--clone REPO [--clone-token T]]
+                                              new project (empty, or a clone), then run; deleted on exit unless work is unpushed
+  claude [--name N] [--clone REPO [--clone-token T]]
+                                              same as new, but gives the box the shared claude token and starts claude
+  claude login                                store the shared Claude token
+  run NAME                                    bash in the project with its tokens loaded
+  token add BOX [--shared] [--env VAR] T      give BOX token T (asks for the value if not stored); takes effect at the next run
+  token rm BOX T | token rm --shared T        take T from BOX | delete shared T and take it from every box
+  token replace BOX T | replace --shared T    enter a new value
+  token ls [BOX]                              BOX's tokens | shared tokens and the boxes that have them
+  ls | stop NAME | rm [--force] NAME          rm also deletes the box's own tokens
+Tokens: T is prefix[:label], e.g. gh:push. The prefix picks the env var: gh -> GH_TOKEN,
+  claude -> CLAUDE_CODE_OAUTH_TOKEN. Any other prefix needs --env VAR, with no guarantee the tool reads it.
+  A token belongs to one box unless --shared. If a box-only and a shared token map to the same var, box-only wins.
+  --clone-token T uses shared token T for the clone only; the box doesn't keep it.
 REPO: owner/repo, https://github.com/owner/repo or git@github.com:owner/repo.git
 EOF
 }
@@ -119,39 +222,42 @@ main() {
   local cmd=${1:-help}; (( $# )) && shift
   case $cmd in
     build) container build -t $IMG -f $DIR/Containerfile $DIR ;;
-    login)
-      print "Approve in the browser, then copy the printed token."
-      container run --rm -it $IMG claude setup-token
-      kc_set claude "the Claude token" ;;
-    new)
-      local name repo
+    new|claude)
+      if [[ $cmd == claude && $1 == login ]]; then
+        print "Approve in the browser, then copy the printed token."
+        container run --rm -it $IMG claude setup-token
+        kc_set shared/claude "the Claude token" || die "token not stored"
+        return 0
+      fi
+      local name repo ctok cvar v
+      local -a run
       while (( $# )); do case $1 in
-        --name) name=$2; shift 2 ;; --clone) repo=$(repo_of $2) || exit 1; shift 2 ;; *) die "unknown arg: $1" ;;
+        --name) name=$2; shift 2 ;; --clone) repo=$(repo_of $2) || exit 1; shift 2 ;;
+        --clone-token) ctok=${2:?--clone-token needs a token name}; shift 2 ;; *) die "unknown arg: $1" ;;
       esac; done
+      [[ -n $ctok && -z $repo ]] && die "--clone-token needs --clone"
+      if [[ $cmd == claude ]]; then
+        kc_get shared/claude >/dev/null || die "no Claude token: run 'box claude login'"
+        run=(claude --dangerously-skip-permissions)
+      fi
       [[ -n $repo ]] && : ${name:=${repo/\//-}}
       [[ -z $name ]] && until name=$(randname); [[ -z $(state $name) ]]; do :; done
       name=${name:l}
       [[ $name == [a-z0-9][a-z0-9_.-]# ]] || die "bad name '$name' (letters, digits, - _ .)"
-      [[ -n $repo ]] && load_pat $repo
+      if [[ -n $ctok ]]; then
+        cvar=$(tok_var $ctok) || exit 1
+        kc_get shared/$ctok >/dev/null || kc_set shared/$ctok "the shared token $ctok" || die "token not stored"
+        v=$(kc_get shared/$ctok) || die "token $ctok not readable"
+        export "$cvar=$v"; ENVS+=(-e $cvar)
+      fi
       create $name
       if [[ -n $repo ]]; then clone $name $repo; else x $name git init -q -b main; fi
-      print "created $name"; session $name || true
+      [[ -n $cvar ]] && unset $cvar  # clone only: exec -e skips unset names, so the box never sees it
+      [[ $cmd == claude ]] && kc_put grant/$name/CLAUDE_CODE_OAUTH_TOKEN shared:claude
+      print "created $name"; session $name $run || true
       reap $name ;;
     run)   [[ -n $1 ]] || die "usage: box run NAME"; session $1 ;;
-    push)
-      local n=${1:?usage: box push NAME REPO} repo
-      repo=$(repo_of ${2:?usage: box push NAME REPO}) || exit 1
-      up $n; load_pat $repo; load_identity
-      x $n git remote remove origin 2>/dev/null || true
-      x $n git remote add origin https://github.com/$repo.git
-      x $n git push -u origin HEAD || die "push failed: create $repo on GitHub (empty) first, and check the token can write it"
-      print "remote set, pushed" ;;
-    token)
-      local n=${1:?usage: box token NAME} r
-      up $n; r=$(remote_of $n); [[ -n $r ]] || die "$n has no remote: use 'box push'"
-      print "Regenerate at https://github.com/settings/personal-access-tokens"
-      kc_set github/$r "the new token for $r"; load_pat $r
-      x $n git ls-remote -q origin &>/dev/null && print "push access works" || die "token rejected" ;;
+    token) token "$@" ;;
     ls)    container ls -a --format json | jq -r '.[] | select(.configuration.id|startswith("box-"))
              | "\(.configuration.id|ltrimstr("box-"))\t\(.status.state)"' | column -t ;;
     stop)  need ${1:?usage: box stop NAME}; container stop box-$1 >/dev/null ;;

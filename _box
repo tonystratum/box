@@ -8,35 +8,68 @@ _box_projects() {
   _describe -t projects project p
 }
 
-# Repos you already have a PAT for, read from Keychain item names (dump-keychain without -d prints no secrets).
-_box_repos() {
-  local -a r
-  r=(${(f)"$(security dump-keychain 2>/dev/null | sed -nE 's#.*"svce"<blob>="box/github/([^"]+)".*#\1#p' | sort -u)"})
-  _describe -t repos 'GitHub repo (owner/repo or URL)' r
+# Keychain item names under box/PREFIX (dump-keychain without -d prints no values).
+_box_kc() {
+  local p=${1//./[.]}
+  security dump-keychain 2>/dev/null | sed -nE "s#.*\"svce\"<blob>=\"box/$p([^\"]+)\".*#\\1#p" | sort -u
+}
+# Token names contain ':', which _describe reads as the description separator, so escape it.
+_box_shared() { local -a t=(${(f)"$(_box_kc shared/)"}); t=(${t//:/\\:}); _describe -t tokens 'shared token' t }
+_box_tokens_of() {  # tokens box $1 has; box-only ones are listed for that box alone
+  local -a t; local g s
+  for g in ${(f)"$(_box_kc grant/$1/)"}; do
+    s=$(security find-generic-password -s box/grant/$1/$g -w 2>/dev/null) && t+=(${s#*:})
+  done
+  t=(${t//:/\\:}); _describe -t tokens "token on $1" t
+}
+
+_box_token() {
+  local curcontext=$curcontext state line
+  local -a verbs=('add:give a box a token' 'rm:take a token away, or delete a shared one'
+                  'replace:enter a new value for a token' 'ls:list a box'"'"'s tokens, or the shared ones')
+  _arguments -C '1:verb:->verb' '*::arg:->args'
+  case $state in
+    verb) _describe -t verbs 'token command' verbs ;;
+    args)
+      case $line[1] in
+        add) _arguments '--shared[shared: other boxes can be given it too]' '--env[env var to inject it as]:VAR:' \
+               '1:box:_box_projects' '2:token:_box_shared' ;;
+        rm|replace)
+          if (( ${words[(I)--shared]} )); then
+            _arguments '--shared[act on a shared token]' '1:token:_box_shared'
+          else
+            _arguments -C '--shared[act on a shared token]' '1:box:_box_projects' '2:token:->tok'
+            [[ $state == tok ]] && _box_tokens_of $line[1]
+          fi ;;
+        ls) _arguments '1:box:_box_projects' ;;
+      esac ;;
+  esac
 }
 
 _box() {
   local -a cmds=(
     'build:build the sandbox image'
-    'login:store a Claude token in the Keychain'
-    'new:create a project (empty, or --clone a GitHub repo)'
-    'run:bash in a project with secrets loaded'
-    'push:connect a project to an empty GitHub repo and push'
-    'token:replace a project'"'"'s GitHub token'
+    'new:create a project (empty, or --clone a GitHub repo), then bash'
+    'claude:create a project and start Claude; or: claude login'
+    'run:bash in a project with its tokens loaded'
+    'token:add, remove, replace or list tokens'
     'ls:list projects'
     'stop:stop a project'
-    'rm:delete a project (refuses if work is unpushed)'
+    'rm:delete a project and its tokens (refuses if work is unpushed)'
   )
+  local -a newargs=('--name[project name]:name:' '--clone[GitHub repo to clone]:repo:'
+                    '--clone-token[shared token used for the clone only]:token:_box_shared')
   local curcontext=$curcontext state line
   _arguments -C '1:command:->cmd' '*::arg:->args'
   case $state in
     cmd) _describe -t commands command cmds ;;
     args)
       case $line[1] in
-        new)   _arguments '--name[project name]:name:' '--clone[GitHub repo to clone]:repo:_box_repos' ;;
-        run|stop|token) _arguments '1:project:_box_projects' ;;
-        rm)    _arguments '--force[delete even with unpushed work]' '1:project:_box_projects' ;;
-        push)  _arguments '1:project:_box_projects' '2:repo:_box_repos' ;;
+        new)    _arguments $newargs ;;
+        claude) _arguments $newargs '1:: :((login\:"store the shared Claude token"))' ;;
+        token)  _box_token ;;
+        run|stop) _arguments '1:project:_box_projects' ;;
+        rm)     _arguments '--force[delete even with unpushed work]' '1:project:_box_projects' ;;
       esac ;;
   esac
 }

@@ -12,6 +12,22 @@ eq "$( (repo_of https://gitlab.com/a/b) 2>&1)" "error: not a GitHub repo: https:
 eq "$( (repo_of apple) 2>&1)" "error: not a GitHub repo: apple"
 [[ $(randname) == [a-z]##-[a-z]##-[a-z]## ]] || { print "FAIL: randname $(randname)"; fail=1 }
 
+# Token names: prefix[:label] picks the env var; --env overrides; ':' is the only separator.
+eq "$(tok_var gh)" GH_TOKEN
+eq "$(tok_var gh:read)" GH_TOKEN
+eq "$(tok_var gh:my-repo.v2)" GH_TOKEN
+eq "$(tok_var claude:work)" CLAUDE_CODE_OAUTH_TOKEN
+eq "$(tok_var npm:ci NPM_TOKEN)" NPM_TOKEN
+eq "$(tok_var docker-compose:ci DC_TOKEN)" DC_TOKEN
+eq "$( (tok_var npm:ci) 2>&1)" "error: unknown prefix 'npm': known: gh, claude; or pass --env VAR (not guaranteed to work)"
+eq "$( (tok_var gh-read) 2>&1)" "error: unknown prefix 'gh-read': known: gh, claude; or pass --env VAR (not guaranteed to work)"
+for bad in GH:read gh: gh:a:b :read 'gh read' gh/read; do
+  eq "$( (tok_var $bad) 2>&1)" "error: bad token name '$bad' (prefix[:label], lowercase letters, digits, _ . -)"
+done
+eq "$( (tok_var npm:ci npm_token) 2>&1)" "error: bad env var 'npm_token'"
+eq "$(tok_path box-1 local:gh:push)" local/box-1/gh:push
+eq "$(tok_path box-1 shared:gh:read)" shared/gh:read
+
 # Guardrail: container machine breaks isolation (see CLAUDE.md).
 ! grep -n 'container machine' ${0:A:h}/box ${0:A:h}/_box || { print 'FAIL: container machine is prohibited'; fail=1 }
 
