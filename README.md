@@ -1,18 +1,70 @@
 # box
 
-Isolated Linux sandboxes on your Mac, built on [apple/container](https://github.com/apple/container).
-Each project gets its own lightweight VM. Nothing is installed on or mounted from the host, and secrets stay in the macOS Keychain.
-Claude Code comes preinstalled and runs with `--dangerously-skip-permissions`, inside the VM only.
+```sh
+box new                                    # an empty project in its own VM, named three-random-words; bash opens inside
+# ...work: write code, install tools, commit...
+exit                                       # unpushed work, so the box is kept and the command to resume it is printed
+# in the browser: create the repo and a fine-grained token limited to it
+box token add three-random-words gh:push   # paste the token; the box gets it as GH_TOKEN at the next run
+box run three-random-words                 # back in, token loaded
+# commit, push etc...
+exit
+box stop three-random-words                # frees CPU and memory; files, tools and tokens stay
+```
 
-> **Status:** early. The full flow is tested on a Mac: creating, entering and removing projects, cloning public and private repos, tokens, Claude signed in inside a box, pushing, and tab completion. See [DESIGN.md](DESIGN.md) for decisions and open questions.
+> A clean box is deleted when you leave it. Run `box build` once per Mac first; see [Install](#install).
 
-## Requirements
+## Tokens
 
-- A Mac with Apple silicon, running macOS 26 or later
-- [apple/container](https://github.com/apple/container/releases), installed and started with `container system start`
-- Nothing else: `box` uses only zsh, `security` and `jq`, all built into macOS
+A token is a credential a box can use, such as a GitHub token for `git push`. A box gets none unless you give it one.
+
+```sh
+# look
+box token ls                                                # the shared tokens and the boxes that have them
+box token ls three-random-words                             # one box's tokens (names only, never values)
+
+# give a box a token: name it prefix[:label]; the prefix picks the env var
+box token add three-random-words gh:push                    # asks for the value if not stored yet; the box gets it as GH_TOKEN (claude: CLAUDE_CODE_OAUTH_TOKEN)
+box token add three-random-words --shared gh:read           # --shared: stored once, any box can be given it; without it the token belongs to that box alone
+box token add three-random-words --env NPM_TOKEN npm:work   # any other prefix needs --env VAR
+box token add --shared gh:read                              # no box: only store a shared token, e.g. a read token for --clone-token
+# a new token takes effect at the box's next `box run`
+
+# change
+box token replace three-random-words gh:push                # enter a new value, e.g. after expiry
+box token rm three-random-words gh:push                     # take it from the box (a box-only token is deleted)
+box token rm --shared gh:read                               # delete a shared token and take it from every box
+```
+
+Tokens live in the macOS Keychain and are passed in when a session starts, never written into the container's config on disk. Limit a GitHub token to one repo: network access is open, so a session can leak the tokens it holds.
+
+## Claude Code
+
+Claude Code is preinstalled in every box.
+
+```sh
+box claude login   # once per Mac: approve in the browser; the token goes into the Keychain as the shared token "claude"
+box claude         # like box new, but starts Claude with full permissions (inside the VM only)
+```
+
+## Commands
+
+- **`box build`**: build the sandbox image from `Containerfile` and `claude-home/`
+- **`box new [--name N] [--clone REPO [--clone-token T]] [--token T]... [--shared-token T]...`**: new project, empty or a clone, then bash; deleted on exit unless work is unpushed. `--clone-token` is a shared token used for the clone only; `--token` is box-only and asks for the value; `--shared-token` uses a shared one
+- **`box claude [same options as new]`**: like `new`, but gives the box the shared `claude` token and starts Claude. `box claude login` stores that token
+- **`box run NAME`**: bash in the project (starts a stopped VM) with its tokens loaded
+- **`box ls`**, **`box stop NAME`**: list boxes; stop one, keeping files, tools and tokens
+- **`box token add BOX [--shared] [--env VAR] T`**: give BOX a token (asks for the value if not stored), effective at the next `run`; `box token add --shared T` only stores it
+- **`box token rm BOX T`**, **`box token rm --shared T`**: take a token from a box; delete a shared one and take it from every box
+- **`box token replace BOX T`**, **`box token replace --shared T`**: enter a new value
+- **`box token ls [BOX]`**: a box's tokens, or the shared ones and who has them
+- **`box rm [--force] NAME`**: delete the box, its files and its own tokens; refuses unpushed work without `--force`
+
+`REPO` is `owner/repo`, `https://github.com/owner/repo` or `git@github.com:owner/repo.git`.
 
 ## Install
+
+You need a Mac with Apple silicon on macOS 26 or later, and [apple/container](https://github.com/apple/container/releases) started with `container system start`. Nothing else: `box` uses only zsh, `security` and `jq`, all built into macOS.
 
 ```sh
 git clone https://github.com/tonystratum/box ~/box
@@ -21,80 +73,11 @@ path=(~/box $path)
 fpath=(~/box $fpath)   # tab completion; must come before compinit
 ```
 
+```sh
+box build   # once per Mac: the sandbox image (Ubuntu, git, gh, Node, Claude Code)
+```
+
 Completion covers every argument: boxes, a box's tokens, shared tokens and the `gh:`/`claude:` prefixes. It shows token names only, never values.
-
-## Quick start
-
-**Once per Mac**
-
-```sh
-box build          # build the sandbox image (Ubuntu, git, gh, Node, Claude Code)
-box claude login   # approve in the browser; the Claude token goes into the Keychain as shared token "claude"
-```
-
-**Per project**
-
-```sh
-box claude                         # new empty project with a random name (e.g. brisk-otter-lamp), Claude started
-box new --clone apple/container    # clone a public repo, then bash
-box new --clone bob/private --clone-token gh:read   # private repo: shared token used for the clone only
-```
-
-**A read token for private clones.** At <https://github.com/settings/personal-access-tokens/new> make a fine-grained token: Repository access *All repositories* (or the ones you pick), then under Repositories **+ Add permissions** → *Contents: Read-only* (GitHub adds *Metadata: Read-only*). Store it once:
-
-```sh
-box token add --shared gh:read   # paste the token; or let the first --clone-token gh:read ask for it
-```
-
-It is passed to the clone only. With *All repositories* it can read every private repo you own, so don't give it to boxes.
-
-Tokens can be given at creation, too: `box claude --clone bob/app --clone-token gh:read --token gh:app`.
-
-**Pushing to GitHub.** Create the repo and a fine-grained token for it in the browser, then give the box the token:
-
-```sh
-box token add brisk-otter-lamp gh:lamp   # asks for the token; the box gets it as GH_TOKEN at the next run
-box run brisk-otter-lamp                 # inside: git remote add origin …, git push (or ask Claude to)
-```
-
-**Daily**
-
-```sh
-box run apple-container                 # bash inside the VM with the box's tokens loaded
-claude --dangerously-skip-permissions   # then, inside: Claude with full permissions, VM only
-box stop apple-container                # leaving bash keeps the VM running; this frees its CPU and memory
-```
-
-`stop` keeps everything on disk: files in `/work` (committed or not), installed tools and tokens. Only running processes end. `box run` starts it again.
-
-## Commands
-
-| Command | What it does |
-|---|---|
-| `build` | Build `box:latest` from `Containerfile` and `claude-home/` |
-| `new [--name N]` | Empty project (`git init`), then `run`; deleted on exit unless work is uncommitted or unpushed |
-| `new --clone REPO [--clone-token T] [--name N]` | Same, cloning a GitHub repo; the name defaults to `owner-repo`; `T` is a shared token used for the clone only |
-| `new … --token T --shared-token T` | Give the new box tokens at creation (repeatable): `--token` is box-only and asks for the value, `--shared-token` uses a shared one; `gh` and `claude` prefixes only. All values are asked for before anything is created |
-| `claude [same options as new]` | Same as `new`, but gives the box the shared `claude` token and starts Claude instead of bash |
-| `claude login` | Store the shared Claude token |
-| `run NAME` | bash inside the project (starts a stopped VM) with the box's tokens and your git identity loaded |
-| `token add BOX [--shared] [--env VAR] T` | Give a box a token; asks for the value if it isn't stored; takes effect at the next `run` |
-| `token add --shared T` | Store a shared token without giving it to a box (e.g. a read token for `--clone-token`) |
-| `token rm BOX T`, `token rm --shared T` | Take a token from a box; delete a shared token and take it from every box |
-| `token replace BOX T`, `token replace --shared T` | Enter a new value (e.g. an expired token) |
-| `token ls [BOX]` | A box's tokens; without BOX, the shared tokens and the boxes that have them |
-| `ls`, `stop NAME`, `rm [--force] NAME` | Housekeeping; `stop` keeps files and tools; `rm` refuses to delete unpushed work, and also deletes the box's own tokens |
-
-`REPO` can be `owner/repo`, `https://github.com/owner/repo`, or `git@github.com:owner/repo.git`.
-
-**Tokens.** A box gets no tokens unless you give it some. A token name is `prefix[:label]`, for example `gh:lamp`; the prefix picks the env var the tool reads:
-
-| Prefix | Env var | Read by |
-|---|---|---|
-| `gh` | `GH_TOKEN` | `gh`, and `git` over https |
-| `claude` | `CLAUDE_CODE_OAUTH_TOKEN` | `claude` |
-
-Any other prefix needs `--env VAR`, with no guarantee the tool reads it. A token belongs to one box unless you pass `--shared`. If a box has a box-only and a shared token for the same env var, the box-only one wins.
 
 ## How it isolates
 
@@ -104,6 +87,8 @@ Any other prefix needs `--env VAR`, with no guarantee the tool reads it. A token
 - **A box holds only the tokens you gave it.** Tokens set in your Mac's shell never reach a box. For GitHub, a fine-grained token limited to one repo keeps a leak to that repo.
 
 **Network access is open.** A session can still leak the tokens it holds. An egress allowlist is on the [deferred list](DESIGN.md#deferred).
+
+> **Status:** early. The full flow is tested on a Mac: creating, entering and removing projects, cloning public and private repos, tokens, Claude signed in inside a box, pushing, and tab completion. See [DESIGN.md](DESIGN.md) for decisions and open questions.
 
 ## Customizing
 
