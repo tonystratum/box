@@ -2,8 +2,13 @@ FROM ubuntu:rolling
 
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      git gh curl ca-certificates build-essential sudo nodejs npm \
+      git gh curl ca-certificates build-essential sudo nodejs npm tmux \
  && rm -rf /var/lib/apt/lists/*
+
+# Without a UTF-8 locale tmux draws non-ASCII glyphs as '_'; COLORTERM tells tmux and Claude the terminal has truecolor.
+ENV LANG=C.UTF-8 COLORTERM=truecolor
+# tmux's default TERM is "screen" (8 colors).
+RUN printf '%s\n' 'set -g default-terminal tmux-256color' "set -as terminal-features ',xterm-256color:RGB'" > /etc/tmux.conf
 
 # Non-root user with passwordless sudo: Claude may install toolchains per project.
 RUN useradd -m -s /bin/bash claude \

@@ -112,7 +112,8 @@ session() {  # name [cmd...]: bash (or cmd) with the box's tokens and git identi
   if g=$(kc_get grant/$n/GH_TOKEN) && [[ $(x $n git remote get-url origin 2>/dev/null) == https://github.com/* ]]; then
     x $n git ls-remote -q origin &>/dev/null || print -u2 "warning: GitHub rejected GH_TOKEN (expired?): $(replace_hint $n $g)"
   fi
-  container exec -it "${ENVS[@]}" -u claude -w /work/$n box-$n "$@"
+  # exec -t sets TERM=xterm (8 colors); the host's own TERM (e.g. xterm-ghostty) may have no terminfo in the box.
+  TERM=xterm-256color container exec -it -e TERM "${ENVS[@]}" -u claude -w /work/$n box-$n "$@"
 }
 
 delete() {  # name: container, volume, and the box's own tokens and grants
