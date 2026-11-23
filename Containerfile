@@ -2,7 +2,7 @@ FROM ubuntu:rolling
 
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      git gh curl ca-certificates build-essential sudo nodejs npm tmux \
+      git gh curl ca-certificates build-essential sudo nodejs npm tmux vim \
  && rm -rf /var/lib/apt/lists/*
 
 # Without a UTF-8 locale tmux draws non-ASCII glyphs as '_'; COLORTERM tells tmux and Claude the terminal has truecolor.

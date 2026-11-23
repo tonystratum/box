@@ -74,7 +74,7 @@ fpath=(~/box $fpath)   # tab completion; must come before compinit
 ```
 
 ```sh
-box build   # once per Mac: the sandbox image (Ubuntu, git, gh, Node, tmux, Claude Code)
+box build   # once per Mac: the sandbox image (Ubuntu, git, gh, Node, tmux, vim, Claude Code)
 ```
 
 Completion covers every argument: boxes, a box's tokens, shared tokens and the `gh:`/`claude:` prefixes. It shows token names only, never values.

@@ -59,7 +59,7 @@ Not a goal (yet): stopping a misbehaving session from exfiltrating the secrets i
 | Tokens at creation | `new`/`claude --token T` (box-only) and `--shared-token T`, repeatable; known prefixes only; everything asked before creating | Explicit like `token add`; a typo or cancel creates nothing; `--env` stays with `token add` to keep the flags simple |
 | Secret injection | `container exec -e NAME` (copies the value from the host environment) at session start, never `create -e` | The `create` config is saved to disk; the `exec` config is not saved by the server (ContainersService.createProcess). Values also stay out of argv |
 | Git identity | Host `git config --global user.name/email` → `GIT_AUTHOR_*` and `GIT_COMMITTER_*` | Commits show as you; skipped when Xcode CLT is missing (avoids the installer pop-up) |
-| Base image | `ubuntu:rolling` + git, gh, Node, tmux, build-essential, sudo, native Claude installer | Newest packages; Node in the VM is fine |
+| Base image | `ubuntu:rolling` + git, gh, Node, tmux, vim, build-essential, sudo, native Claude installer | Newest packages; Node in the VM is fine |
 | Terminal | Sessions get `TERM=xterm-256color`; the image sets `LANG=C.UTF-8`, `COLORTERM=truecolor` and tmux `default-terminal tmux-256color` with RGB | `exec -t` defaults to `xterm` (8 colors), the host TERM (e.g. `xterm-ghostty`) has no terminfo in the box, and tmux without a UTF-8 locale draws glyphs as `_` |
 | Claude settings | `claude-home/` baked into the image at `~/.claude` | Same setup everywhere; rebuild after editing |
 | Implementation | One zsh script + `_box` completion | Nothing to install or build |
