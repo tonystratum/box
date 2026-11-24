@@ -46,6 +46,7 @@ Not a goal (yet): stopping a misbehaving session from exfiltrating the secrets i
 | Backend | Plain `container create`, never `container machine` | Machines mount `$HOME` read-write, forward the ssh-agent and add every Linux capability (docs/container-machine.md) |
 | Code location | Named volume `box-NAME` at `/work`, no host mounts | Full isolation; a rebuilt container keeps the work |
 | Persistent mode | Container kept (stop/start) + volume | Tools installed with apt survive between sessions |
+| Resources | Every box gets 8 CPUs and 16 GB of memory (`container create -c 8 -m 16G`); set at creation, so older boxes keep theirs | apple/container defaults are small for builds and Claude; one size keeps the script flag-free |
 | New mode | `box new` opens `box run`, then on exit deletes the project only if clean and pushed (`pushed()`); no separate `fresh` command | Projects you only peek into do not pile up; work is never lost silently |
 | Session | `box run` opens bash with the box's tokens loaded; Claude is started by hand, or by `box claude` for a new box; no separate `shell` command | One way in; the same environment for Claude and for anything else |
 | Tokens | None by default; `box token add/rm/replace/ls`; box-only unless `--shared`; Keychain `box/local/BOX/T`, `box/shared/T`, and `box/grant/BOX/VAR` = `local:T` or `shared:T` | Least privilege per box; one mechanism for any tool instead of GitHub- and Claude-specific code |
@@ -77,7 +78,6 @@ Not a goal (yet): stopping a misbehaving session from exfiltrating the secrets i
   - A one-step way to start Claude in an existing box (today: `box run NAME`, then `claude`).
 - **Dev-server preview.** No ports are published. Options: a fixed `-p` range at create time, or browsing to the container IP.
 - **Egress allowlist.** Network access is fully open. Only egress control (a proxy, or vmnet rules) would stop a session from leaking `CLAUDE_CODE_OAUTH_TOKEN` or `GH_TOKEN`.
-- **CPU and memory limits.** Not set yet; `-c` and `-m` exist on `container create`.
 - **Updating existing projects after `build`.** Persistent containers keep their old rootfs, and with `ubuntu:rolling` they stay on the previous release. A possible `box rebuild NAME` would recreate the container on the same volume.
 - **Stopping the VM on exit.** Today leaving bash keeps the VM running until `box stop`. Options, discussed 2026-11-19: (1) `run --keep` to skip an automatic stop; (2) on exit, stop only if no other session and no background process is left in the VM, so a `nohup` dev server keeps it up (preferred); (3) the exit code decides; (4) leave as is. Option 2 needs a reliable "anything else running?" check first.
 - **Concurrent sessions** on one project. Not prevented; an automatic stop on exit would have to account for them.

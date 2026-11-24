@@ -88,7 +88,7 @@ create() {
   local n=$1
   [[ -z $(state $n) ]] || die "project '$n' exists; use --name"
   container image inspect $IMG &>/dev/null || die "no image: run 'box build'"
-  container create --name box-$n --init -l box=1 -v box-$n:/work $IMG sleep infinity >/dev/null
+  container create --name box-$n --init -c 8 -m 16G -l box=1 -v box-$n:/work $IMG sleep infinity >/dev/null
   container start box-$n >/dev/null
   container exec -u root box-$n sh -c "mkdir -p /work/$n && chown -R claude:claude /work" \
     || { delete $n; die "setup of $n failed; nothing was kept"; }
